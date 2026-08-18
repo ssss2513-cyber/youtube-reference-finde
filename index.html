@@ -616,7 +616,7 @@
   <div id="thumbTab" style="display:none">
     <div class="tabs" style="margin-bottom:16px">
       <div class="tab subtab active" data-subtab="fix">🔧 기존 이미지 진단·수정</div>
-      <div class="tab subtab" data-subtab="new">🆕 아예 새로 만들기</div>
+      <div class="tab subtab" data-subtab="new">🎨 썸네일 제작</div>
     </div>
 
     <div id="thumbFixPanel">
@@ -625,12 +625,6 @@
       실제 AI가 이미지를 "이해"하는 것이 아니며, 클릭률(CTR)을 예측하거나 보장하지 않습니다.
     </div>
     <div class="search-panel">
-      <label style="display:block;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:6px">영상 카테고리 (선택 — 넣으면 수정 프롬프트가 더 정확해져요)</div>
-        <select id="fixCategorySelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
-          <option value="">선택 안 함</option>
-        </select>
-      </label>
       <label class="upload-dropzone" id="uploadDropzone">
         <input type="file" id="thumbFileInput" accept="image/*" style="display:none">
         <span id="uploadLabel">📤 진단할 썸네일 이미지를 선택하세요 (클릭해서 업로드)</span>
@@ -1455,10 +1449,6 @@ function renderThumbResults(m, result, img) {
 }
 
 function linkDiagnosisToNewPanel(img, m) {
-  // 카테고리 넘기기
-  const fixCat = document.getElementById('fixCategorySelect').value;
-  if (fixCat) document.getElementById('newCategorySelect').value = fixCat;
-
   // 진단했던 이미지를 참고 이미지로 그대로 사용
   if (img) {
     document.getElementById('refPreviewImg').src = img.src;
@@ -1494,14 +1484,13 @@ const CATEGORY_LIST = [
   '미스터리/미제사건', '실화 사연', '기타'
 ];
 function populateCategorySelects() {
-  [document.getElementById('fixCategorySelect'), document.getElementById('newCategorySelect')].forEach(sel => {
-    if (!sel) return;
-    CATEGORY_LIST.forEach(cat => {
-      const opt = document.createElement('option');
-      opt.value = cat;
-      opt.textContent = cat;
-      sel.appendChild(opt);
-    });
+  const sel = document.getElementById('newCategorySelect');
+  if (!sel) return;
+  CATEGORY_LIST.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    sel.appendChild(opt);
   });
 }
 populateCategorySelects();
@@ -1509,9 +1498,7 @@ populateCategorySelects();
 function buildAiPrompt(needsWork) {
   if (!needsWork.length) return '';
   const instructions = needsWork.map(mt => mt.ai).filter(Boolean);
-  const category = document.getElementById('fixCategorySelect') ? document.getElementById('fixCategorySelect').value : '';
   const lines = [];
-  if (category) lines.push(`이 영상은 "${category}" 카테고리 콘텐츠야. 그 느낌에 어울리게 수정해줘.`);
   lines.push(
     '이 유튜브 썸네일 이미지를 더 눈에 띄고 클릭하고 싶게 만들도록 수정해줘.',
     '아래 항목들을 반영해서 편집해줘 (중요한 순서대로):',
