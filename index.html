@@ -602,6 +602,12 @@
   </div>
 
   <div id="thumbTab" style="display:none">
+    <div class="tabs" style="margin-bottom:16px">
+      <div class="tab subtab active" data-subtab="fix">🔧 기존 이미지 진단·수정</div>
+      <div class="tab subtab" data-subtab="new">🆕 아예 새로 만들기</div>
+    </div>
+
+    <div id="thumbFixPanel">
     <div class="disclaimer">
       ⚠️ 이 진단은 이미지의 대비·채도·복잡도 등 기술적 특성을 규칙 기반으로 계산한 참고용 점수입니다.
       실제 AI가 이미지를 "이해"하는 것이 아니며, 클릭률(CTR)을 예측하거나 보장하지 않습니다.
@@ -619,6 +625,58 @@
       </div>
     </div>
     <div id="thumbResultsArea"></div>
+    </div>
+
+    <div id="thumbNewPanel" style="display:none">
+      <div class="disclaimer">
+        💡 기존 이미지를 고치는 게 아니라, <b>완전히 새로운 썸네일 이미지를 처음부터 생성</b>하기 위한
+        프롬프트를 만들어드려요. 아래 내용을 입력하면 후킹 잘 되는 썸네일의 공식(대비·색감·구도·여백)이
+        반영된 프롬프트가 만들어집니다. 이 프롬프트를 복사해서 ChatGPT(이미지 생성 기능)에 붙여넣으세요.
+      </div>
+      <div class="search-panel">
+        <div class="filters" style="flex-direction:column;align-items:stretch;gap:14px">
+          <label style="display:block">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">영상 주제/제목 <span style="color:var(--accent)">*</span></div>
+            <input type="text" id="newTopicInput" placeholder="예: 자취 5년차가 알려주는 냉장고 정리법" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
+          </label>
+          <label style="display:block">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">강조하고 싶은 내용 / 키워드 (선택)</div>
+            <input type="text" id="newKeywordsInput" placeholder="예: Before/After 비교, 충격적인 반전, 꿀팁 3가지" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
+          </label>
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <label style="flex:1;min-width:160px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px">분위기 / 톤</div>
+              <select id="newMoodSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+                <option value="exciting">흥미진진 / 긴장감</option>
+                <option value="shocking">충격적 / 놀라움</option>
+                <option value="informative">유익한 정보 / 전문적</option>
+                <option value="funny">재미 / 유머</option>
+                <option value="emotional">감성적 / 잔잔함</option>
+              </select>
+            </label>
+            <label style="flex:1;min-width:160px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px">이미지 스타일</div>
+              <select id="newStyleSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+                <option value="photo">실사 사진 스타일</option>
+                <option value="illustration">일러스트/그래픽 스타일</option>
+                <option value="webtoon">웹툰/만화 스타일</option>
+                <option value="3d">3D 렌더링 스타일</option>
+              </select>
+            </label>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer">
+            <input type="checkbox" id="newFaceCheckbox" checked style="width:16px;height:16px">
+            표정이 뚜렷한 인물 얼굴 클로즈업 포함하기
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer">
+            <input type="checkbox" id="newTextSpaceCheckbox" checked style="width:16px;height:16px">
+            큰 제목 텍스트 넣을 여백 남겨두기
+          </label>
+        </div>
+        <button class="primary" id="generateNewBtn" style="width:100%;margin-top:16px;padding:13px">🆕 새 이미지 프롬프트 만들기</button>
+      </div>
+      <div id="newPromptResultArea"></div>
+    </div>
   </div>
 </main>
 
@@ -779,15 +837,26 @@ document.getElementById('settingsSave').onclick = () => {
 };
 
 // tabs
-document.querySelectorAll('.tab').forEach(tab => {
+document.querySelectorAll('.tab:not(.subtab)').forEach(tab => {
   tab.onclick = () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab:not(.subtab)').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     const name = tab.dataset.tab;
     document.getElementById('searchTab').style.display = name === 'search' ? '' : 'none';
     document.getElementById('savedTab').style.display = name === 'saved' ? '' : 'none';
     document.getElementById('thumbTab').style.display = name === 'thumb' ? '' : 'none';
     if (name === 'saved') renderSaved();
+  };
+});
+
+// thumbnail sub-tabs (기존 이미지 진단·수정 / 아예 새로 만들기)
+document.querySelectorAll('.subtab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const name = tab.dataset.subtab;
+    document.getElementById('thumbFixPanel').style.display = name === 'fix' ? '' : 'none';
+    document.getElementById('thumbNewPanel').style.display = name === 'new' ? '' : 'none';
   };
 });
 
@@ -1387,6 +1456,98 @@ document.getElementById('analyzeBtn').onclick = () => {
     const result = scoreThumbnail(m);
     renderThumbResults(m, result, currentThumbImg);
   }, 30);
+};
+
+/* ---------- 아예 새로 만들기: 새 썸네일 이미지 생성용 프롬프트 ---------- */
+
+const MOOD_TEXT = {
+  exciting: { label: '흥미진진 / 긴장감', desc: '드라마틱한 조명과 강한 그림자, 긴장감이 느껴지는 표정과 동작' },
+  shocking: { label: '충격적 / 놀라움', desc: '과장되게 놀란 표정, 강렬한 명암 대비, 화살표나 동그라미 같은 강조 그래픽' },
+  informative: { label: '유익한 정보 / 전문적', desc: '깔끔하고 신뢰감 있는 구도, 정돈된 인포그래픽 느낌의 여백' },
+  funny: { label: '재미 / 유머', desc: '밝고 과장된 표정, 만화 같은 생동감 있는 색감' },
+  emotional: { label: '감성적 / 잔잔함', desc: '따뜻한 색온도, 부드러운 조명, 차분한 분위기' }
+};
+const STYLE_TEXT = {
+  photo: '실사 사진처럼 사실적인 스타일',
+  illustration: '깔끔한 일러스트/그래픽 디자인 스타일',
+  webtoon: '한국 웹툰/만화풍 스타일',
+  '3d': '입체감 있는 3D 렌더링 스타일'
+};
+
+function buildNewThumbnailPrompt() {
+  const topic = document.getElementById('newTopicInput').value.trim();
+  const keywords = document.getElementById('newKeywordsInput').value.trim();
+  const moodKey = document.getElementById('newMoodSelect').value;
+  const styleKey = document.getElementById('newStyleSelect').value;
+  const includeFace = document.getElementById('newFaceCheckbox').checked;
+  const includeTextSpace = document.getElementById('newTextSpaceCheckbox').checked;
+
+  if (!topic) return null;
+
+  const mood = MOOD_TEXT[moodKey];
+  const style = STYLE_TEXT[styleKey];
+
+  const lines = [
+    `아래 조건에 맞는 완전히 새로운 유튜브 썸네일 이미지를 만들어줘. 기존 이미지는 참고하지 말고 처음부터 새로 생성해줘.`,
+    ``,
+    `[영상 주제]`,
+    topic,
+  ];
+  if (keywords) {
+    lines.push(``, `[강조하고 싶은 내용/키워드]`, keywords);
+  }
+  lines.push(
+    ``,
+    `[분위기]`,
+    `${mood.label} — ${mood.desc}`,
+    ``,
+    `[스타일]`,
+    style,
+    ``,
+    `[필수 구도 조건]`,
+    `1. 16:9 가로 비율, 1280x720 이상 고해상도로 선명하게`,
+    `2. 명암 대비를 뚜렷하게 해서 배경과 핵심 피사체가 확실히 분리되도록`,
+    `3. 채도 높고 생동감 있는 색상 사용, 빨강/주황/노랑 계열 포인트 컬러를 어딘가에 넣어줘`,
+    `4. 핵심 피사체 1개에 시선이 집중되도록 하고, 불필요한 요소는 넣지 말아줘 (2~3개 요소로 심플하게)`
+  );
+  if (includeFace) {
+    lines.push(`5. 표정이 뚜렷하게 보이는 인물 얼굴 클로즈업을 포함해줘 (분위기에 맞는 표정으로)`);
+  }
+  if (includeTextSpace) {
+    lines.push(`${includeFace ? '6' : '5'}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 상단이나 하단 한쪽에 비교적 단순한 여백을 남겨줘`);
+  }
+  lines.push(
+    ``,
+    `유튜브 피드에서 다른 영상들 사이에 있어도 시선을 확 끌 수 있게, 클릭하고 싶어지는 썸네일로 만들어줘.`
+  );
+  return lines.join('\n');
+}
+
+document.getElementById('generateNewBtn').onclick = () => {
+  const area = document.getElementById('newPromptResultArea');
+  const prompt = buildNewThumbnailPrompt();
+  if (!prompt) {
+    area.innerHTML = `<div class="status error">영상 주제/제목을 입력해주세요.</div>`;
+    return;
+  }
+  area.innerHTML = `
+    <div class="action-panel all-good">
+      <h3>✅ 새 이미지 프롬프트가 만들어졌어요</h3>
+      <div class="action-text" style="white-space:pre-wrap;font-size:13px;line-height:1.6;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:8px">${prompt}</div>
+      <button class="icon-btn" id="copyNewPromptBtn" style="margin-top:12px;width:100%">🤖 ChatGPT용 프롬프트 복사</button>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:8px">
+        복사한 뒤 <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>에서 새 대화를 열고 붙여넣으면 이미지를 생성해줍니다 (이미지 첨부 필요 없음).
+      </div>
+    </div>`;
+  document.getElementById('copyNewPromptBtn').onclick = () => {
+    navigator.clipboard.writeText(prompt).then(() => {
+      const btn = document.getElementById('copyNewPromptBtn');
+      btn.textContent = '✅ 복사 완료! ChatGPT에 붙여넣으세요';
+      setTimeout(() => { btn.textContent = '🤖 ChatGPT용 프롬프트 복사'; }, 2500);
+    }).catch(() => {
+      window.prompt('복사에 실패했습니다. 아래 내용을 직접 복사하세요:', prompt);
+    });
+  };
 };
 </script>
 
