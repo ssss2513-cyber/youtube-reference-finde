@@ -659,12 +659,14 @@
             <label style="flex:1;min-width:160px">
               <div style="font-size:13px;font-weight:600;margin-bottom:6px">분위기 / 톤</div>
               <select id="newMoodSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+                <option value="eerie">공포 / 으스스함</option>
                 <option value="exciting">흥미진진 / 긴장감</option>
                 <option value="shocking">충격적 / 놀라움</option>
                 <option value="informative">유익한 정보 / 전문적</option>
                 <option value="funny">재미 / 유머</option>
                 <option value="emotional">감성적 / 잔잔함</option>
               </select>
+              <div id="moodRecommendBadge" style="display:none;font-size:11.5px;color:var(--accent);margin-top:5px">🎯 진단 결과 기반 추천</div>
             </label>
           </div>
           <label style="display:block">
@@ -1433,11 +1435,11 @@ function renderThumbResults(m, result, img) {
 
   const linkBtn = document.getElementById('linkToNewBtn');
   if (linkBtn) {
-    linkBtn.onclick = () => linkDiagnosisToNewPanel(img);
+    linkBtn.onclick = () => linkDiagnosisToNewPanel(img, m);
   }
 }
 
-function linkDiagnosisToNewPanel(img) {
+function linkDiagnosisToNewPanel(img, m) {
   // 카테고리 넘기기
   const fixCat = document.getElementById('fixCategorySelect').value;
   if (fixCat) document.getElementById('newCategorySelect').value = fixCat;
@@ -1448,6 +1450,13 @@ function linkDiagnosisToNewPanel(img) {
     document.getElementById('refPreviewWrap').style.display = 'block';
     document.getElementById('refUploadDropzone').style.display = 'none';
     currentRefImgFile = { name: '방금 진단했던 그 썸네일 이미지', isLinkedFromDiagnosis: true };
+  }
+
+  // 진단 결과를 바탕으로 분위기/톤 자동 추천 (직접 고르지 않아도 되도록)
+  if (m) {
+    const recommended = recommendMoodFromDiagnosis(m);
+    document.getElementById('newMoodSelect').value = recommended;
+    document.getElementById('moodRecommendBadge').style.display = 'block';
   }
 
   // '새로 만들기' 서브탭으로 전환
@@ -1464,8 +1473,8 @@ function prompt_dialog(text) {
 }
 
 const CATEGORY_LIST = [
-  '브이로그', '게임', '요리/먹방', '뷰티/패션', '리뷰/언박싱',
-  '교육/정보', '코미디/엔터', '음악', '스포츠/운동', '여행', 'ASMR', '기타'
+  '전래동화/민담', '도시전설/괴담', '역사 야사', '신화/전설',
+  '미스터리/미제사건', '무서운 이야기(공포)', '실화 사연', '기타'
 ];
 function populateCategorySelects() {
   [document.getElementById('fixCategorySelect'), document.getElementById('newCategorySelect')].forEach(sel => {
@@ -1540,12 +1549,29 @@ document.getElementById('analyzeBtn').onclick = () => {
 /* ---------- 아예 새로 만들기: 새 썸네일 이미지 생성용 프롬프트 ---------- */
 
 const MOOD_TEXT = {
+  eerie: { label: '공포 / 으스스함', desc: '어둡고 음산한 조명, 짙은 그림자, 서늘한 색감(어두운 청록·보라 계열), 안개나 실루엣 활용' },
   exciting: { label: '흥미진진 / 긴장감', desc: '드라마틱한 조명과 강한 그림자, 긴장감이 느껴지는 표정과 동작' },
   shocking: { label: '충격적 / 놀라움', desc: '과장되게 놀란 표정, 강렬한 명암 대비, 화살표나 동그라미 같은 강조 그래픽' },
   informative: { label: '유익한 정보 / 전문적', desc: '깔끔하고 신뢰감 있는 구도, 정돈된 인포그래픽 느낌의 여백' },
   funny: { label: '재미 / 유머', desc: '밝고 과장된 표정, 만화 같은 생동감 있는 색감' },
   emotional: { label: '감성적 / 잔잔함', desc: '따뜻한 색온도, 부드러운 조명, 차분한 분위기' }
 };
+
+// 진단 결과(m)를 바탕으로 분위기를 자동 추천 — 규칙 기반 추정치라 참고용입니다
+function recommendMoodFromDiagnosis(m) {
+  const isDark = m.avgLum < 95;
+  const isHighContrast = m.stdLum > 55;
+  const isDesaturated = m.avgSat < 0.22;
+  const warmCoolTotal = m.warmSatSum + m.coolSatSum;
+  const warmRatio = warmCoolTotal > 0 ? m.warmSatSum / warmCoolTotal : 0.5;
+  const hasFace = m.skinRatio > 0.04;
+
+  if (isDark && isHighContrast) return 'eerie';
+  if (isDesaturated && !isHighContrast) return 'emotional';
+  if (warmRatio > 0.55 && isHighContrast) return hasFace ? 'shocking' : 'exciting';
+  if (!isDark && isHighContrast && warmRatio < 0.4) return 'informative';
+  return 'exciting';
+}
 const STYLE_TEXT = {
   photo: '실사 사진처럼 사실적인 스타일',
   illustration: '깔끔한 일러스트/그래픽 디자인 스타일',
@@ -1613,6 +1639,10 @@ function buildNewThumbnailPrompt() {
   );
   return lines.join('\n');
 }
+
+document.getElementById('newMoodSelect').addEventListener('change', () => {
+  document.getElementById('moodRecommendBadge').style.display = 'none';
+});
 
 document.getElementById('generateNewBtn').onclick = () => {
   const area = document.getElementById('newPromptResultArea');
