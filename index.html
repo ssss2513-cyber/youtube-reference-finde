@@ -677,6 +677,17 @@
     </div>
 
     <input type="text" id="apiKeyInput" placeholder="여기에 발급받은 키를 붙여넣으세요 (AIzaSy로 시작)">
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-dim);margin-bottom:14px;cursor:pointer">
+      <input type="checkbox" id="snoozeCheckbox" checked style="width:16px;height:16px">
+      <span>아직 키가 없어요 —
+        <select id="snoozeDays" style="padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <option value="1">1일</option>
+          <option value="7">7일</option>
+          <option value="30" selected>30일</option>
+        </select>
+        동안 이 창 안 보기
+      </span>
+    </label>
     <div class="settings-actions">
       <button id="settingsCancel">닫기</button>
       <button class="primary" id="settingsSave">저장</button>
@@ -699,6 +710,15 @@ function safeSetItem(key, val) { try { localStorage.setItem(key, val); } catch (
 
 function getApiKey() { return safeGetItem(API_KEY_STORAGE) || ''; }
 function setApiKey(k) { safeSetItem(API_KEY_STORAGE, k); }
+
+const SNOOZE_STORAGE = 'ytref_snooze_until';
+function isSnoozed() {
+  const until = parseInt(safeGetItem(SNOOZE_STORAGE) || '0', 10);
+  return Date.now() < until;
+}
+function setSnooze(days) {
+  safeSetItem(SNOOZE_STORAGE, String(Date.now() + days * 86400000));
+}
 function getSaved() { try { return JSON.parse(safeGetItem(SAVED_STORAGE)) || []; } catch (e) { return []; } }
 function setSaved(arr) { safeSetItem(SAVED_STORAGE, JSON.stringify(arr)); }
 
@@ -741,9 +761,20 @@ document.getElementById('settingsBtn').onclick = () => {
   apiKeyInput.value = getApiKey();
   settingsOverlay.classList.remove('hidden');
 };
-document.getElementById('settingsCancel').onclick = () => settingsOverlay.classList.add('hidden');
+function applySnoozeIfChecked() {
+  const checkbox = document.getElementById('snoozeCheckbox');
+  if (checkbox && checkbox.checked) {
+    const days = parseInt(document.getElementById('snoozeDays').value, 10);
+    setSnooze(days);
+  }
+}
+document.getElementById('settingsCancel').onclick = () => {
+  applySnoozeIfChecked();
+  settingsOverlay.classList.add('hidden');
+};
 document.getElementById('settingsSave').onclick = () => {
   setApiKey(apiKeyInput.value.trim());
+  applySnoozeIfChecked();
   settingsOverlay.classList.add('hidden');
 };
 
@@ -941,7 +972,7 @@ document.getElementById('queryInput').addEventListener('keydown', e => {
 
 updateSavedCount();
 renderQuotaBadge();
-if (!getApiKey()) {
+if (!getApiKey() && !isSnoozed()) {
   setTimeout(() => { settingsOverlay.classList.remove('hidden'); }, 300);
 }
 
