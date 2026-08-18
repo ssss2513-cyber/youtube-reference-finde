@@ -451,6 +451,18 @@
   .metric-value { color: var(--text-dim); font-weight: 400; }
   .metric-tip { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
   .swatch-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .saved-pick-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .saved-pick-row:hover { background: var(--chip-bg); }
+  .saved-pick-row img { width: 64px; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+  .saved-pick-row .spr-title { font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+  .saved-pick-row .spr-channel { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
   .action-panel {
     background: var(--accent-dim);
     border: 1px solid var(--accent);
@@ -693,8 +705,11 @@
               <input type="file" id="refFileInput" accept="image/*" style="display:none">
               <span id="refUploadLabel">📎 참고할 이미지가 있으면 클릭해서 첨부 (선택 사항)</span>
             </label>
+            <button type="button" class="icon-btn" id="pickFromSavedBtn" style="width:100%;margin-top:8px">⭐ 저장한 레퍼런스에서 선택하기</button>
+            <div id="savedPickerArea" style="display:none;margin-top:10px;max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg)"></div>
             <div id="refPreviewWrap" style="display:none;margin-top:10px;position:relative">
               <img id="refPreviewImg" style="width:160px;border-radius:8px;border:1px solid var(--border);display:block">
+              <div id="refSourceLabel" style="font-size:12px;color:var(--text-dim);margin-top:4px"></div>
               <button type="button" id="refRemoveBtn" class="icon-btn" style="margin-top:6px">✕ 참고 이미지 제거</button>
             </div>
           </div>
@@ -1449,6 +1464,8 @@ function linkDiagnosisToNewPanel(img, m) {
     document.getElementById('refPreviewImg').src = img.src;
     document.getElementById('refPreviewWrap').style.display = 'block';
     document.getElementById('refUploadDropzone').style.display = 'none';
+    document.getElementById('refSourceLabel').textContent = '📌 방금 진단한 썸네일 이미지';
+    document.getElementById('savedPickerArea').style.display = 'none';
     currentRefImgFile = { name: '방금 진단했던 그 썸네일 이미지', isLinkedFromDiagnosis: true };
   }
 
@@ -1473,8 +1490,8 @@ function prompt_dialog(text) {
 }
 
 const CATEGORY_LIST = [
-  '전래동화/민담', '도시전설/괴담', '역사 야사', '신화/전설',
-  '미스터리/미제사건', '무서운 이야기(공포)', '실화 사연', '기타'
+  '전래동화/민담', '역사 야사', '신화/전설',
+  '미스터리/미제사건', '실화 사연', '기타'
 ];
 function populateCategorySelects() {
   [document.getElementById('fixCategorySelect'), document.getElementById('newCategorySelect')].forEach(sel => {
@@ -1630,7 +1647,9 @@ function buildNewThumbnailPrompt() {
     lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 상단이나 하단 한쪽에 비교적 단순한 여백을 남겨줘`);
     stepNum++;
   }
-  if (currentRefImgFile) {
+  if (currentRefImgFile && currentRefImgFile.isFromSavedRef) {
+    lines.push(`${stepNum}. 함께 첨부한 참고 이미지(저장해둔 레퍼런스 영상 "${currentRefImgFile.videoTitle}"의 썸네일)의 색감/분위기/구도 스타일을 참고해서 비슷한 느낌으로 만들어줘 (내용을 그대로 베끼지는 말고 스타일만 참고)`);
+  } else if (currentRefImgFile) {
     lines.push(`${stepNum}. 함께 첨부한 참고 이미지의 색감/분위기/구도 스타일을 참고해서 비슷한 느낌으로 만들어줘 (내용을 그대로 베끼지는 말고 스타일만 참고)`);
   }
   lines.push(
@@ -1652,7 +1671,9 @@ document.getElementById('generateNewBtn').onclick = () => {
     return;
   }
   let refNote;
-  if (currentRefImgFile && currentRefImgFile.isLinkedFromDiagnosis) {
+  if (currentRefImgFile && currentRefImgFile.isFromSavedRef) {
+    refNote = `복사한 뒤 <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>에서 새 대화를 열고 붙여넣으세요. 참고한 영상 썸네일은 유튜브 링크에서 가져온 거라 파일로 바로 첨부는 안 돼요 — 필요하면 <a href="${currentRefImgFile.videoUrl}" target="_blank">${currentRefImgFile.videoTitle}</a> 영상 페이지에서 썸네일을 캡처하거나 저장해서 함께 첨부해주세요 (프롬프트 안에 이미 제목은 적혀 있어서, 텍스트만으로도 어느 정도 참고가 됩니다).`;
+  } else if (currentRefImgFile && currentRefImgFile.isLinkedFromDiagnosis) {
     refNote = `복사한 뒤 <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>에서 새 대화를 열고, <b>방금 "진단·수정" 탭에서 올렸던 그 썸네일 이미지 파일을 다시 첨부</b>한 다음 프롬프트를 붙여넣으세요 (참고 이미지는 이 앱에 저장되지 않아서, 파일을 다시 선택해서 올려야 해요).`;
   } else if (currentRefImgFile) {
     refNote = `복사한 뒤 <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>에서 새 대화를 열고, <b>참고 이미지 파일(${currentRefImgFile.name})도 함께 첨부</b>한 다음 프롬프트를 붙여넣으세요.`;
@@ -1685,6 +1706,8 @@ function handleRefFile(file) {
     document.getElementById('refPreviewImg').src = e.target.result;
     document.getElementById('refPreviewWrap').style.display = 'block';
     document.getElementById('refUploadDropzone').style.display = 'none';
+    document.getElementById('refSourceLabel').textContent = '';
+    document.getElementById('savedPickerArea').style.display = 'none';
   };
   reader.readAsDataURL(file);
 }
@@ -1704,6 +1727,57 @@ document.getElementById('refRemoveBtn').onclick = () => {
   document.getElementById('refFileInput').value = '';
   document.getElementById('refPreviewWrap').style.display = 'none';
   document.getElementById('refUploadDropzone').style.display = 'flex';
+  document.getElementById('refSourceLabel').textContent = '';
+};
+
+/* ---------- 저장한 레퍼런스에서 참고 이미지 선택 ---------- */
+
+function renderSavedPicker() {
+  const area = document.getElementById('savedPickerArea');
+  const saved = getSaved();
+  if (!saved.length) {
+    area.innerHTML = `<div style="font-size:12.5px;color:var(--text-dim);padding:10px;text-align:center">아직 저장한 레퍼런스가 없어요. "검색" 탭에서 먼저 ☆ 저장해보세요.</div>`;
+    return;
+  }
+  area.innerHTML = saved.map(v => `
+    <div class="saved-pick-row" data-id="${v.id}">
+      <img src="${v.thumb}" loading="lazy" alt="">
+      <div>
+        <div class="spr-title">${v.title}</div>
+        <div class="spr-channel">${v.channel}</div>
+      </div>
+    </div>`).join('');
+
+  area.querySelectorAll('.saved-pick-row').forEach(row => {
+    row.onclick = () => {
+      const id = row.dataset.id;
+      const v = saved.find(x => x.id === id);
+      if (!v) return;
+      document.getElementById('refPreviewImg').src = v.thumb;
+      document.getElementById('refPreviewWrap').style.display = 'block';
+      document.getElementById('refUploadDropzone').style.display = 'none';
+      document.getElementById('refSourceLabel').textContent = `📌 저장한 레퍼런스: ${v.title} (${v.channel})`;
+      area.style.display = 'none';
+      currentRefImgFile = {
+        name: v.title,
+        isFromSavedRef: true,
+        videoTitle: v.title,
+        channel: v.channel,
+        videoUrl: `https://www.youtube.com/watch?v=${v.id}`
+      };
+    };
+  });
+}
+
+document.getElementById('pickFromSavedBtn').onclick = () => {
+  const area = document.getElementById('savedPickerArea');
+  const showing = area.style.display !== 'none';
+  if (showing) {
+    area.style.display = 'none';
+  } else {
+    renderSavedPicker();
+    area.style.display = 'block';
+  }
 };
 </script>
 
