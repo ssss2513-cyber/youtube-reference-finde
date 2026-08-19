@@ -689,9 +689,14 @@
             <input type="checkbox" id="newFaceCheckbox" checked style="width:16px;height:16px">
             표정이 뚜렷한 인물 얼굴 클로즈업 포함하기
           </label>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer">
-            <input type="checkbox" id="newTextSpaceCheckbox" checked style="width:16px;height:16px">
-            큰 제목 텍스트 넣을 여백 남겨두기
+          <label style="display:block">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">제목 텍스트 넣을 여백 위치</div>
+            <select id="newTextSpaceSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+              <option value="auto" selected>자동 (AI가 알아서 배치)</option>
+              <option value="bottom-left">하단 왼쪽</option>
+              <option value="bottom-right">하단 오른쪽</option>
+              <option value="none">여백 안 남김</option>
+            </select>
           </label>
 
           <div>
@@ -1619,7 +1624,10 @@ let currentRefImgFile = null;
 
 const NEW_FORM_FIELD_LABELS = {
   topic: '영상 주제', keywords: '강조 키워드', category: '카테고리', mood: '분위기',
-  style: '스타일', face: '인물 얼굴 포함', textSpace: '텍스트 여백', hasRef: '참고 이미지 첨부'
+  style: '스타일', face: '인물 얼굴 포함', textSpace: '텍스트 여백 위치', hasRef: '참고 이미지 첨부'
+};
+const TEXT_SPACE_LABELS = {
+  auto: '자동 (AI가 알아서 배치)', 'bottom-left': '하단 왼쪽', 'bottom-right': '하단 오른쪽', none: '여백 안 남김'
 };
 
 function getCurrentNewFormState() {
@@ -1630,7 +1638,7 @@ function getCurrentNewFormState() {
     mood: document.getElementById('newMoodSelect').value,
     style: document.getElementById('newStyleSelect').value,
     face: document.getElementById('newFaceCheckbox').checked,
-    textSpace: document.getElementById('newTextSpaceCheckbox').checked,
+    textSpace: document.getElementById('newTextSpaceSelect').value,
     hasRef: !!currentRefImgFile
   };
 }
@@ -1638,7 +1646,8 @@ function getCurrentNewFormState() {
 function formatNewFormValue(key, val) {
   if (key === 'mood') return MOOD_TEXT[val] ? MOOD_TEXT[val].label : val;
   if (key === 'style') return STYLE_TEXT[val] || val;
-  if (key === 'face' || key === 'textSpace' || key === 'hasRef') return val ? '포함' : '미포함';
+  if (key === 'textSpace') return TEXT_SPACE_LABELS[val] || val;
+  if (key === 'face' || key === 'hasRef') return val ? '포함' : '미포함';
   return val || '(없음)';
 }
 
@@ -1676,7 +1685,7 @@ function buildNewThumbnailPrompt() {
   const moodKey = document.getElementById('newMoodSelect').value;
   const styleKey = document.getElementById('newStyleSelect').value;
   const includeFace = document.getElementById('newFaceCheckbox').checked;
-  const includeTextSpace = document.getElementById('newTextSpaceCheckbox').checked;
+  const textSpacePos = document.getElementById('newTextSpaceSelect').value;
 
   if (!topic) return null;
 
@@ -1714,8 +1723,14 @@ function buildNewThumbnailPrompt() {
     lines.push(`${stepNum}. 표정이 뚜렷하게 보이는 인물 얼굴 클로즈업을 포함해줘 (분위기에 맞는 표정으로)`);
     stepNum++;
   }
-  if (includeTextSpace) {
+  if (textSpacePos === 'auto') {
     lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 상단이나 하단 한쪽에 비교적 단순한 여백을 남겨줘`);
+    stepNum++;
+  } else if (textSpacePos === 'bottom-left') {
+    lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 하단 왼쪽에 비교적 단순한 여백을 남겨줘 (그 쪽엔 중요한 요소를 배치하지 말아줘)`);
+    stepNum++;
+  } else if (textSpacePos === 'bottom-right') {
+    lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 하단 오른쪽에 비교적 단순한 여백을 남겨줘 (그 쪽엔 중요한 요소를 배치하지 말아줘)`);
     stepNum++;
   }
   if (currentRefImgFile && currentRefImgFile.isFromSavedRef) {
