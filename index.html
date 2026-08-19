@@ -1916,6 +1916,53 @@ function analyzeSeoTags(tagsStr) {
   }];
 }
 
+window.__ytrefCompetitorStats = null;
+
+function buildSeoGenerationPrompt() {
+  const title = document.getElementById('seoTitleInput').value.trim();
+  const keyword = document.getElementById('seoKeywordInput').value.trim();
+  const desc = document.getElementById('seoDescInput').value.trim();
+  const tagsStr = document.getElementById('seoTagsInput').value.trim();
+  if (!title) return null;
+
+  const lines = [
+    '아래 정보를 참고해서 유튜브 SEO 상위 노출에 최적화된 제목·설명·해시태그를 새로 만들어줘.',
+    '',
+    '[영상 주제/초안 제목]',
+    title
+  ];
+  if (keyword) lines.push('', '[목표 키워드]', keyword);
+  if (desc) lines.push('', '[참고할 기존 설명 (내용은 유지하되 SEO에 맞게 다듬어줘)]', desc);
+  if (tagsStr) lines.push('', '[참고할 기존 태그]', tagsStr);
+
+  const stats = window.__ytrefCompetitorStats;
+  if (stats && keyword && stats.keyword === keyword) {
+    lines.push(
+      '',
+      '[실제 경쟁 콘텐츠 참고 데이터]',
+      `"${stats.keyword}" 키워드로 검색했을 때 조회수 상위 영상들의 평균 제목 길이는 ${stats.avgLen}자이고, 그중 ${stats.numberRatio}%가 제목에 숫자를 사용했어요.`,
+      `상위 노출 제목 예시: ${stats.sampleTitles.map(t => `"${t}"`).join(', ')}`
+    );
+  }
+
+  lines.push(
+    '',
+    '[SEO 최적화 기준]',
+    '1. 제목: 20~60자, 목표 키워드를 앞쪽 15자 이내에 배치, 숫자나 구체적 수치 포함, "충격/소름/실화/반전" 같은 호기심 유발 단어 1개 포함, 느낌표·물음표는 과하지 않게',
+    '2. 설명: 200자 이상, 첫 150자 안에 목표 키워드 포함, 영상 내용을 자연스럽게 요약, 마지막에 관련 해시태그 2~3개 포함',
+    '3. 해시태그: 3~5개, 제목/설명과 연관된 핵심 키워드 위주로',
+    '',
+    '[결과 형식]',
+    '아래 형식 그대로, 복사해서 바로 쓸 수 있게 출력해줘:',
+    '제목 후보 1: ...',
+    '제목 후보 2: ...',
+    '제목 후보 3: ...',
+    '설명: ...',
+    '해시태그: ...'
+  );
+  return lines.join('\n');
+}
+
 function renderSeoResults() {
   const title = document.getElementById('seoTitleInput').value.trim();
   const keyword = document.getElementById('seoKeywordInput').value.trim();
@@ -1995,6 +2042,11 @@ function renderSeoResults() {
     : '';
 
   area.innerHTML = `
+    <div class="action-panel" style="background:var(--accent-dim);border-color:var(--accent)">
+      <h3 style="color:var(--accent)">✍️ 완성형 제목·설명·해시태그 한 번에 만들기</h3>
+      <div class="action-text">지금 입력한 제목(초안)을 바탕으로, SEO 기준에 맞는 제목 후보·설명·해시태그를 통째로 생성하는 프롬프트를 만들어드려요. 복사해서 ChatGPT에 붙여넣기만 하면 됩니다.</div>
+      <button class="icon-btn" id="copySeoGenPromptBtn" style="margin-top:12px;width:100%">✍️ ChatGPT용 생성 프롬프트 복사</button>
+    </div>
     ${actionPanel}
     <div class="score-panel">
       <div class="score-circle" style="border-color:${gradeColor}; color:${gradeColor}">
@@ -2009,6 +2061,19 @@ function renderSeoResults() {
     <div class="search-panel">${metricRows}</div>
     ${competitorSection}
   `;
+
+  const genBtn = document.getElementById('copySeoGenPromptBtn');
+  if (genBtn) {
+    genBtn.onclick = () => {
+      const genPrompt = buildSeoGenerationPrompt();
+      navigator.clipboard.writeText(genPrompt).then(() => {
+        genBtn.textContent = '✅ 복사 완료! ChatGPT에 붙여넣으세요';
+        setTimeout(() => { genBtn.textContent = '✍️ ChatGPT용 생성 프롬프트 복사'; }, 2500);
+      }).catch(() => {
+        window.prompt('복사에 실패했습니다. 아래 내용을 직접 복사하세요:', genPrompt);
+      });
+    };
+  }
 
   const copyBtn = document.getElementById('copySeoPromptBtn');
   if (copyBtn) {
@@ -2060,6 +2125,13 @@ async function fetchSeoCompetitors(keyword) {
     }));
     const avgLen = Math.round(videos.reduce((s, v) => s + v.title.length, 0) / videos.length);
     const numberCount = videos.filter(v => /[0-9]/.test(v.title)).length;
+
+    window.__ytrefCompetitorStats = {
+      keyword,
+      avgLen,
+      numberRatio: Math.round(numberCount / videos.length * 100),
+      sampleTitles: videos.slice(0, 5).map(v => v.title)
+    };
 
     resultArea.innerHTML = `
       <div class="disclaimer" style="margin-top:12px">
