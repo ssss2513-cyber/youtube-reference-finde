@@ -1617,6 +1617,58 @@ const STYLE_TEXT = {
 
 let currentRefImgFile = null;
 
+const NEW_FORM_FIELD_LABELS = {
+  topic: '영상 주제', keywords: '강조 키워드', category: '카테고리', mood: '분위기',
+  style: '스타일', face: '인물 얼굴 포함', textSpace: '텍스트 여백', hasRef: '참고 이미지 첨부'
+};
+
+function getCurrentNewFormState() {
+  return {
+    topic: document.getElementById('newTopicInput').value.trim(),
+    keywords: document.getElementById('newKeywordsInput').value.trim(),
+    category: document.getElementById('newCategorySelect').value,
+    mood: document.getElementById('newMoodSelect').value,
+    style: document.getElementById('newStyleSelect').value,
+    face: document.getElementById('newFaceCheckbox').checked,
+    textSpace: document.getElementById('newTextSpaceCheckbox').checked,
+    hasRef: !!currentRefImgFile
+  };
+}
+
+function formatNewFormValue(key, val) {
+  if (key === 'mood') return MOOD_TEXT[val] ? MOOD_TEXT[val].label : val;
+  if (key === 'style') return STYLE_TEXT[val] || val;
+  if (key === 'face' || key === 'textSpace' || key === 'hasRef') return val ? '포함' : '미포함';
+  return val || '(없음)';
+}
+
+function diffNewFormState(oldState, newState) {
+  const diffs = [];
+  Object.keys(NEW_FORM_FIELD_LABELS).forEach(key => {
+    if (oldState[key] !== newState[key]) {
+      diffs.push({
+        key,
+        label: NEW_FORM_FIELD_LABELS[key],
+        oldVal: formatNewFormValue(key, oldState[key]),
+        newVal: formatNewFormValue(key, newState[key])
+      });
+    }
+  });
+  return diffs;
+}
+
+function buildRefinePrompt(prevPrompt, diffs) {
+  return [
+    '이전에 아래 내용으로 유튜브 썸네일 이미지를 요청했었어:',
+    '"""',
+    prevPrompt,
+    '"""',
+    '',
+    '이번엔 전체를 새로 만들지 말고, 아래 항목만 바꿔서 다시 만들어줘. 나머지 조건(구도·색감·스타일 등)은 이전과 최대한 비슷하게 유지해줘:',
+    ...diffs.map((d, i) => `${i + 1}. ${d.label}: "${d.oldVal}" → "${d.newVal}"`)
+  ].join('\n');
+}
+
 function buildNewThumbnailPrompt() {
   const topic = document.getElementById('newTopicInput').value.trim();
   const keywords = document.getElementById('newKeywordsInput').value.trim();
@@ -1689,6 +1741,11 @@ document.getElementById('generateNewBtn').onclick = () => {
     area.innerHTML = `<div class="status error">영상 주제/제목을 입력해주세요.</div>`;
     return;
   }
+
+  const prevState = window.__ytrefLastNewFormState;
+  const prevPrompt = window.__ytrefLastNewPrompt;
+  const currentState = getCurrentNewFormState();
+
   let refNote;
   if (currentRefImgFile && currentRefImgFile.isFromSavedRef) {
     refNote = `복사한 뒤 <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>에서 새 대화를 열고 붙여넣으세요. 참고한 영상 썸네일은 유튜브 링크에서 가져온 거라 파일로 바로 첨부는 안 돼요 — 필요하면 <a href="${currentRefImgFile.videoUrl}" target="_blank">${currentRefImgFile.videoTitle}</a> 영상 페이지에서 썸네일을 캡처하거나 저장해서 함께 첨부해주세요 (프롬프트 안에 이미 제목은 적혀 있어서, 텍스트만으로도 어느 정도 참고가 됩니다).`;
@@ -1699,13 +1756,34 @@ document.getElementById('generateNewBtn').onclick = () => {
   } else {
     refNote = `복사한 뒤 <a href="https://chatgpt.com" target="_blank">chatgpt.com</a>에서 새 대화를 열고 붙여넣으면 이미지를 생성해줍니다 (이미지 첨부 필요 없음).`;
   }
+  let refinePrompt = '';
+  let refineSection = '';
+  if (prevState && prevPrompt) {
+    const diffs = diffNewFormState(prevState, currentState);
+    if (diffs.length) {
+      refinePrompt = buildRefinePrompt(prevPrompt, diffs);
+      refineSection = `
+        <div class="action-panel" style="margin-top:14px">
+          <h3>🔁 이전 버전에서 바뀐 부분만 반영하기</h3>
+          <div class="action-text">전체를 새로 쓰지 않고, 방금 전에 만들었던 프롬프트를 그대로 유지한 채 아래 ${diffs.length}개 항목만 바뀐 걸로 요청하는 프롬프트예요.</div>
+          ${diffs.map(d => `
+            <div class="action-item">
+              <span class="action-num">•</span>
+              <div class="action-text"><b>${d.label}</b>${d.oldVal} → ${d.newVal}</div>
+            </div>`).join('')}
+          <button class="icon-btn" id="copyRefinePromptBtn" style="margin-top:12px;width:100%">🔁 ChatGPT용 부분 수정 프롬프트 복사</button>
+        </div>`;
+    }
+  }
+
   area.innerHTML = `
     <div class="action-panel all-good">
       <h3>✅ 새 이미지 프롬프트가 만들어졌어요</h3>
       <div class="action-text" style="white-space:pre-wrap;font-size:13px;line-height:1.6;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:8px">${prompt}</div>
       <button class="icon-btn" id="copyNewPromptBtn" style="margin-top:12px;width:100%">🤖 ChatGPT용 프롬프트 복사</button>
       <div style="font-size:12px;color:var(--text-dim);margin-top:8px">${refNote}</div>
-    </div>`;
+    </div>
+    ${refineSection}`;
   document.getElementById('copyNewPromptBtn').onclick = () => {
     navigator.clipboard.writeText(prompt).then(() => {
       const btn = document.getElementById('copyNewPromptBtn');
@@ -1715,6 +1793,20 @@ document.getElementById('generateNewBtn').onclick = () => {
       window.prompt('복사에 실패했습니다. 아래 내용을 직접 복사하세요:', prompt);
     });
   };
+  const refineBtn = document.getElementById('copyRefinePromptBtn');
+  if (refineBtn) {
+    refineBtn.onclick = () => {
+      navigator.clipboard.writeText(refinePrompt).then(() => {
+        refineBtn.textContent = '✅ 복사 완료! ChatGPT에 붙여넣으세요';
+        setTimeout(() => { refineBtn.textContent = '🔁 ChatGPT용 부분 수정 프롬프트 복사'; }, 2500);
+      }).catch(() => {
+        window.prompt('복사에 실패했습니다. 아래 내용을 직접 복사하세요:', refinePrompt);
+      });
+    };
+  }
+
+  window.__ytrefLastNewFormState = currentState;
+  window.__ytrefLastNewPrompt = prompt;
 };
 
 function handleRefFile(file) {
