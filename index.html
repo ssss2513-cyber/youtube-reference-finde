@@ -559,6 +559,7 @@
     <div class="tab active" data-tab="search">검색</div>
     <div class="tab" data-tab="saved">저장한 레퍼런스 <span id="savedCount"></span></div>
     <div class="tab" data-tab="thumb">썸네일 진단</div>
+    <div class="tab" data-tab="seo">SEO 분석</div>
   </div>
 
   <div id="searchTab">
@@ -712,6 +713,36 @@
       </div>
       <div id="newPromptResultArea"></div>
     </div>
+  </div>
+
+  <div id="seoTab" style="display:none">
+    <div class="disclaimer">
+      ⚠️ 제목/설명/태그 점검은 유튜브 SEO의 일반적인 권장 기준(글자수·키워드 배치 등)을 기반으로 한
+      규칙 기반 참고 지표입니다. "경쟁 콘텐츠 살펴보기"는 실제 YouTube 검색 결과를 가져오며, 검색 1회당
+      할당량이 소모됩니다(우측 상단 게이지 참고).
+    </div>
+    <div class="search-panel">
+      <div class="filters" style="flex-direction:column;align-items:stretch;gap:14px">
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">영상 제목 <span style="color:var(--accent)">*</span></div>
+          <input type="text" id="seoTitleInput" placeholder="예: 실제로 있었던 소름돋는 전래동화 3가지" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
+        </label>
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">목표 키워드 (선택 — 입력하면 제목 앞배치 체크 + 경쟁 콘텐츠 검색 가능)</div>
+          <input type="text" id="seoKeywordInput" placeholder="예: 전래동화" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
+        </label>
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">설명(설명글) (선택)</div>
+          <textarea id="seoDescInput" rows="5" placeholder="영상 설명을 붙여넣으세요..." style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px;font-family:inherit;resize:vertical"></textarea>
+        </label>
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">태그 (선택 — 쉼표로 구분)</div>
+          <input type="text" id="seoTagsInput" placeholder="예: 전래동화, 민담, 옛날이야기, 무서운이야기" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
+        </label>
+      </div>
+      <button class="primary" id="analyzeSeoBtn" style="width:100%;margin-top:16px;padding:13px">🔍 SEO 분석하기</button>
+    </div>
+    <div id="seoResultsArea"></div>
   </div>
 </main>
 
@@ -880,6 +911,7 @@ document.querySelectorAll('.tab:not(.subtab)').forEach(tab => {
     document.getElementById('searchTab').style.display = name === 'search' ? '' : 'none';
     document.getElementById('savedTab').style.display = name === 'saved' ? '' : 'none';
     document.getElementById('thumbTab').style.display = name === 'thumb' ? '' : 'none';
+    document.getElementById('seoTab').style.display = name === 'seo' ? '' : 'none';
     if (name === 'saved') renderSaved();
   };
 });
@@ -1766,6 +1798,291 @@ document.getElementById('pickFromSavedBtn').onclick = () => {
     area.style.display = 'block';
   }
 };
+
+/* ---------- 유튜브 SEO 분석기 (규칙 기반 무료 분석 + 선택적 실제 검색 비교) ---------- */
+
+const CLICK_TRIGGER_WORDS = ['충격', '소름', '실화', '레전드', '결말', '반전', '진짜', '실제로', '몰랐던', '무서운', '미스터리', '전설', '괴담', '비밀', '경악', '역대급', '충격적'];
+
+function analyzeSeoTitle(title, keyword) {
+  const metrics = [];
+  const len = title.length;
+
+  const lenOk = len >= 20 && len <= 60;
+  metrics.push({
+    label: '제목 길이', value: `${len}자`, ok: lenOk, weight: 25,
+    tip: lenOk
+      ? '검색 결과·추천 피드에서 잘리지 않고 온전히 보이는 적당한 길이예요.'
+      : (len < 20
+          ? '제목이 짧아서 검색 키워드를 충분히 담기 어려워요. 20~60자 정도를 권장해요.'
+          : '제목이 길어서 검색 결과나 모바일 화면에서 뒷부분이 잘릴 수 있어요. 60자 이내로 줄여보세요.'),
+    ai: len < 20 ? '제목을 조금 더 구체적으로 늘려서 20~60자 사이로 만들어줘' : '핵심만 남기고 60자 이내로 줄여줘'
+  });
+
+  if (keyword) {
+    const idx = title.indexOf(keyword);
+    const front = idx >= 0 && idx <= 15;
+    metrics.push({
+      label: '키워드 앞배치', value: idx >= 0 ? `${idx + 1}번째 글자` : '없음', ok: front, weight: 20,
+      tip: idx < 0
+        ? `제목에 목표 키워드 "${keyword}"가 없어요. 검색 노출을 위해 꼭 포함해보세요.`
+        : (front
+            ? '키워드가 제목 앞부분에 있어서 검색 결과와 모바일 화면에서도 잘 보여요.'
+            : '키워드가 제목 뒷부분에 있어요. 앞쪽 15자 이내로 옮기면 검색 노출에 더 유리해요.'),
+      ai: idx < 0 ? `제목 앞부분에 "${keyword}" 키워드를 자연스럽게 포함시켜줘` : `"${keyword}" 키워드를 제목 앞쪽으로 옮겨줘`
+    });
+  }
+
+  const hasNumber = /[0-9]/.test(title);
+  metrics.push({
+    label: '숫자 활용', value: hasNumber ? '있음' : '없음', ok: hasNumber, weight: 10,
+    tip: hasNumber
+      ? '숫자가 들어가 있어서 구체적이고 클릭을 유도하기 좋아요 (예: "3가지", "TOP5").'
+      : '숫자를 넣으면("~하는 3가지 이야기" 등) 더 구체적으로 느껴져서 클릭률에 도움이 될 수 있어요.',
+    ai: '제목에 자연스럽게 숫자를 하나 넣어줘 (예: 몇 가지, 순서 등)'
+  });
+
+  const hasTrigger = CLICK_TRIGGER_WORDS.some(w => title.includes(w));
+  metrics.push({
+    label: '호기심 유발 단어', value: hasTrigger ? '있음' : '없음', ok: hasTrigger, weight: 20,
+    tip: hasTrigger
+      ? '호기심을 자극하는 단어가 포함돼 있어서 클릭을 유도하기 좋아요.'
+      : '"충격", "소름", "실화", "반전" 같은 단어를 자연스럽게 넣으면 클릭률에 도움이 될 수 있어요.',
+    ai: '제목에 호기심을 자극하는 단어(충격/소름/실화/반전 등)를 자연스럽게 하나 추가해줘'
+  });
+
+  const excessivePunct = (title.match(/[!?]/g) || []).length > 2;
+  metrics.push({
+    label: '특수문자 남용', value: excessivePunct ? '과함' : '적절', ok: !excessivePunct, weight: 10,
+    tip: excessivePunct
+      ? '느낌표·물음표가 과하면 스팸처럼 보여서 오히려 신뢰도가 떨어질 수 있어요.'
+      : '과도한 특수문자 없이 깔끔해요.',
+    ai: '느낌표나 물음표 사용을 줄여서 더 자연스럽게 만들어줘'
+  });
+
+  return metrics;
+}
+
+function analyzeSeoDescription(desc, keyword) {
+  const metrics = [];
+  if (!desc) {
+    metrics.push({
+      label: '설명글', value: '없음', ok: false, weight: 15,
+      tip: '설명글이 비어있어요. 최소 200자 이상, 첫 문장에 핵심 키워드를 넣어서 작성해보세요.',
+      ai: '영상 설명을 200자 이상으로 작성해줘. 첫 문장에 핵심 키워드가 들어가게 해줘'
+    });
+    return metrics;
+  }
+  const len = desc.length;
+  const lenOk = len >= 200;
+  metrics.push({
+    label: '설명글 길이', value: `${len}자`, ok: lenOk, weight: 15,
+    tip: lenOk ? '충분한 길이로 작성되어 있어서 검색 알고리즘이 내용을 파악하기 좋아요.' : '설명이 짧아요. 200자 이상 작성하면 검색 노출에 도움이 돼요.',
+    ai: '영상 설명을 200자 이상으로 더 자세하게 확장해줘'
+  });
+
+  if (keyword) {
+    const front = desc.slice(0, 150);
+    const inFront = front.includes(keyword);
+    metrics.push({
+      label: '설명 앞부분 키워드', value: inFront ? '포함' : '미포함', ok: inFront, weight: 10,
+      tip: inFront
+        ? '앞부분(첫 150자, "더보기" 누르기 전에 보이는 영역)에 키워드가 있어서 좋아요.'
+        : `첫 150자 안에 "${keyword}" 키워드가 없어요. 그 부분만 검색결과 미리보기에 노출되니 앞쪽에 넣어보세요.`,
+      ai: `설명 첫 문장에 "${keyword}" 키워드를 자연스럽게 넣어줘`
+    });
+  }
+
+  const hashtagCount = (desc.match(/#[^\s#]+/g) || []).length;
+  metrics.push({
+    label: '해시태그 개수', value: `${hashtagCount}개`, ok: hashtagCount >= 1 && hashtagCount <= 5, weight: 5,
+    tip: hashtagCount === 0
+      ? '해시태그가 없어요. 관련 해시태그 2~3개 정도 추가해보세요.'
+      : (hashtagCount > 5 ? '해시태그가 너무 많아요. 3개 이내로 줄이는 게 좋아요 (너무 많으면 스팸으로 보일 수 있어요).' : '적절한 개수예요.'),
+    ai: hashtagCount === 0 ? '설명 끝에 관련 해시태그 2~3개를 추가해줘' : (hashtagCount > 5 ? '해시태그 개수를 3개 이내로 줄여줘' : '')
+  });
+
+  return metrics;
+}
+
+function analyzeSeoTags(tagsStr) {
+  const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
+  const countOk = tags.length >= 5 && tags.length <= 15;
+  return [{
+    label: '태그 개수', value: `${tags.length}개`, ok: tags.length > 0 && countOk, weight: 5,
+    tip: tags.length === 0
+      ? '태그가 없어요. 관련 키워드를 5~15개 정도 추가해보세요.'
+      : (countOk ? '적절한 개수예요.' : (tags.length < 5 ? '태그가 적어요. 5개 이상 추가해보세요.' : '태그가 너무 많아요. 핵심 태그 위주로 15개 이내로 정리해보세요.')),
+    ai: tags.length === 0 ? '영상과 관련된 태그를 5~15개 정도 추천해줘' : ''
+  }];
+}
+
+function renderSeoResults() {
+  const title = document.getElementById('seoTitleInput').value.trim();
+  const keyword = document.getElementById('seoKeywordInput').value.trim();
+  const desc = document.getElementById('seoDescInput').value.trim();
+  const tagsStr = document.getElementById('seoTagsInput').value.trim();
+  const area = document.getElementById('seoResultsArea');
+
+  if (!title) {
+    area.innerHTML = `<div class="status error">영상 제목을 입력해주세요.</div>`;
+    return;
+  }
+
+  const allMetrics = [
+    ...analyzeSeoTitle(title, keyword),
+    ...analyzeSeoDescription(desc, keyword),
+    ...analyzeSeoTags(tagsStr)
+  ];
+
+  const totalWeight = allMetrics.reduce((s, m) => s + m.weight, 0);
+  const earned = allMetrics.filter(m => m.ok).reduce((s, m) => s + m.weight, 0);
+  const score = totalWeight ? Math.round((earned / totalWeight) * 100) : 0;
+
+  let grade, gradeColor;
+  if (score >= 85) { grade = '검색 노출에 매우 유리함'; gradeColor = '#2fbf71'; }
+  else if (score >= 70) { grade = '양호함'; gradeColor = '#8bc34a'; }
+  else if (score >= 55) { grade = '보통'; gradeColor = '#f5a623'; }
+  else if (score >= 40) { grade = '개선 필요'; gradeColor = '#ff884d'; }
+  else { grade = '많이 개선 필요'; gradeColor = '#ff0000'; }
+
+  const needsWork = allMetrics.filter(m => !m.ok).sort((a, b) => b.weight - a.weight);
+  const seoPrompt = needsWork.length ? [
+    '아래 유튜브 영상의 제목/설명/태그를 SEO에 더 유리하게 다듬어줘.',
+    '',
+    `[현재 제목]`, title,
+    desc ? `\n[현재 설명]\n${desc}` : '',
+    tagsStr ? `\n[현재 태그]\n${tagsStr}` : '',
+    '',
+    '[개선해야 할 점]',
+    ...needsWork.map(m => m.ai).filter(Boolean).map((a, i) => `${i + 1}. ${a}`),
+    '',
+    '결과는 "제목 / 설명 / 태그" 형식으로 정리해서 보여줘.'
+  ].join('\n') : '';
+  window.__ytrefSeoPrompt = seoPrompt;
+
+  const actionPanel = needsWork.length
+    ? `<div class="action-panel">
+        <h3>🔧 이 순서대로 고쳐보세요 (영향 큰 순)</h3>
+        ${needsWork.map((m, i) => `
+          <div class="action-item">
+            <span class="action-num">${i + 1}</span>
+            <div class="action-text"><b>${m.label}</b>${m.tip}</div>
+          </div>`).join('')}
+        <button class="icon-btn" id="copySeoPromptBtn" style="margin-top:12px;width:100%">🤖 ChatGPT용 개선 프롬프트 복사</button>
+      </div>`
+    : `<div class="action-panel all-good">
+        <h3>🎉 특별히 고칠 점이 없어요</h3>
+        <div class="action-text">기본적인 SEO 체크 항목을 모두 충족했어요.</div>
+      </div>`;
+
+  const metricRows = allMetrics.map(m => `
+    <div class="metric-row">
+      <span class="metric-icon">${m.ok ? '✅' : '⚠️'}</span>
+      <div style="flex:1">
+        <div class="metric-label-row"><span>${m.label}</span><span class="metric-value">${m.value}</span></div>
+        <div class="metric-tip">${m.tip}</div>
+      </div>
+    </div>`).join('');
+
+  const apiKey = getApiKey();
+  const competitorSection = keyword
+    ? (apiKey
+        ? `<div class="search-panel">
+             <button class="icon-btn" id="fetchCompetitorsBtn" style="width:100%">🔎 "${keyword}" 실제 검색 결과로 경쟁 콘텐츠 살펴보기</button>
+             <div id="competitorResultArea"></div>
+           </div>`
+        : `<div class="disclaimer">💡 목표 키워드로 실제 유튜브 검색 결과를 비교해보려면 우측 상단 "⚙ API 키 설정"에서 키를 등록해주세요.</div>`)
+    : '';
+
+  area.innerHTML = `
+    ${actionPanel}
+    <div class="score-panel">
+      <div class="score-circle" style="border-color:${gradeColor}; color:${gradeColor}">
+        <span class="num">${score}</span>
+        <span class="max">/ 100</span>
+      </div>
+      <div>
+        <div class="score-grade" style="color:${gradeColor}">${grade}</div>
+        <div class="score-sub">제목·설명·태그 기준 종합 SEO 점검 점수</div>
+      </div>
+    </div>
+    <div class="search-panel">${metricRows}</div>
+    ${competitorSection}
+  `;
+
+  const copyBtn = document.getElementById('copySeoPromptBtn');
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(seoPrompt).then(() => {
+        copyBtn.textContent = '✅ 복사 완료! ChatGPT에 붙여넣으세요';
+        setTimeout(() => { copyBtn.textContent = '🤖 ChatGPT용 개선 프롬프트 복사'; }, 2500);
+      }).catch(() => {
+        window.prompt('복사에 실패했습니다. 아래 내용을 직접 복사하세요:', seoPrompt);
+      });
+    };
+  }
+
+  const fetchBtn = document.getElementById('fetchCompetitorsBtn');
+  if (fetchBtn) {
+    fetchBtn.onclick = () => fetchSeoCompetitors(keyword);
+  }
+}
+
+async function fetchSeoCompetitors(keyword) {
+  const resultArea = document.getElementById('competitorResultArea');
+  const apiKey = getApiKey();
+  resultArea.innerHTML = `<div class="status">검색 중...</div>`;
+  try {
+    const params = new URLSearchParams({
+      part: 'snippet', q: keyword, type: 'video', maxResults: '10', order: 'viewCount', key: apiKey
+    });
+    const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
+    const searchData = await searchRes.json();
+    addQuotaUnits(UNIT_COST.search);
+    if (searchData.error) throw new Error(searchData.error.message);
+
+    const ids = (searchData.items || []).map(it => it.id.videoId).filter(Boolean);
+    if (!ids.length) {
+      resultArea.innerHTML = `<div class="empty">검색 결과가 없습니다.</div>`;
+      return;
+    }
+    const detailParams = new URLSearchParams({ part: 'snippet,statistics', id: ids.join(','), key: apiKey });
+    const detailRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?${detailParams}`);
+    const detailData = await detailRes.json();
+    addQuotaUnits(UNIT_COST.videos);
+    if (detailData.error) throw new Error(detailData.error.message);
+
+    const videos = (detailData.items || []).map(it => ({
+      id: it.id,
+      title: it.snippet.title,
+      channel: it.snippet.channelTitle,
+      views: parseInt(it.statistics?.viewCount || 0, 10)
+    }));
+    const avgLen = Math.round(videos.reduce((s, v) => s + v.title.length, 0) / videos.length);
+    const numberCount = videos.filter(v => /[0-9]/.test(v.title)).length;
+
+    resultArea.innerHTML = `
+      <div class="disclaimer" style="margin-top:12px">
+        조회수 상위 ${videos.length}개 영상의 <b>평균 제목 길이는 ${avgLen}자</b>이고,
+        그중 <b>${numberCount}개(${Math.round(numberCount / videos.length * 100)}%)</b>가 제목에 숫자를 사용했어요.
+        아래 제목들을 참고해서 내 제목과 비교해보세요.
+      </div>
+      <div class="search-panel">
+        ${videos.map((v, i) => `
+          <div class="metric-row">
+            <span class="metric-icon">${i + 1}</span>
+            <div style="flex:1">
+              <div class="metric-label-row"><span><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" style="color:var(--text)">${v.title}</a></span><span class="metric-value">${v.title.length}자</span></div>
+              <div class="metric-tip">${v.channel} · 조회수 ${formatViews(v.views)}회</div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  } catch (err) {
+    resultArea.innerHTML = `<div class="status error">오류: ${err.message}</div>`;
+  }
+}
+
+document.getElementById('analyzeSeoBtn').onclick = renderSeoResults;
 </script>
 
 </body>
