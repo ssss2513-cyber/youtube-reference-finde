@@ -694,6 +694,7 @@
             <select id="newTextSpaceSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
               <option value="auto" selected>자동 (AI가 알아서 배치)</option>
               <option value="bottom-left">하단 왼쪽</option>
+              <option value="bottom-center">하단 중앙</option>
               <option value="bottom-right">하단 오른쪽</option>
               <option value="none">여백 안 남김</option>
             </select>
@@ -1627,7 +1628,8 @@ const NEW_FORM_FIELD_LABELS = {
   style: '스타일', face: '인물 얼굴 포함', textSpace: '텍스트 여백 위치', hasRef: '참고 이미지 첨부'
 };
 const TEXT_SPACE_LABELS = {
-  auto: '자동 (AI가 알아서 배치)', 'bottom-left': '하단 왼쪽', 'bottom-right': '하단 오른쪽', none: '여백 안 남김'
+  auto: '자동 (AI가 알아서 배치)', 'bottom-left': '하단 왼쪽', 'bottom-center': '하단 중앙',
+  'bottom-right': '하단 오른쪽', none: '여백 안 남김'
 };
 
 function getCurrentNewFormState() {
@@ -1723,14 +1725,16 @@ function buildNewThumbnailPrompt() {
     lines.push(`${stepNum}. 표정이 뚜렷하게 보이는 인물 얼굴 클로즈업을 포함해줘 (분위기에 맞는 표정으로)`);
     stepNum++;
   }
-  if (textSpacePos === 'auto') {
-    lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 상단이나 하단 한쪽에 비교적 단순한 여백을 남겨줘`);
-    stepNum++;
-  } else if (textSpacePos === 'bottom-left') {
-    lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 하단 왼쪽에 비교적 단순한 여백을 남겨줘 (그 쪽엔 중요한 요소를 배치하지 말아줘)`);
-    stepNum++;
-  } else if (textSpacePos === 'bottom-right') {
-    lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 화면 하단 오른쪽에 비교적 단순한 여백을 남겨줘 (그 쪽엔 중요한 요소를 배치하지 말아줘)`);
+  const TEXT_SPACE_POSITION_PHRASE = {
+    auto: '화면 상단이나 하단 한쪽',
+    'bottom-left': '화면 하단 왼쪽',
+    'bottom-center': '화면 하단 중앙',
+    'bottom-right': '화면 하단 오른쪽'
+  };
+  if (TEXT_SPACE_POSITION_PHRASE[textSpacePos]) {
+    const posPhrase = TEXT_SPACE_POSITION_PHRASE[textSpacePos];
+    const extra = textSpacePos === 'auto' ? '' : ' (그 쪽엔 중요한 요소를 배치하지 말아줘)';
+    lines.push(`${stepNum}. 나중에 큰 제목 텍스트를 얹을 수 있도록 ${posPhrase}에 비교적 단순한 여백을 남겨줘${extra}`);
     stepNum++;
   }
   if (currentRefImgFile && currentRefImgFile.isFromSavedRef) {
