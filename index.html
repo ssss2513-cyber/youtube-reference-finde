@@ -507,6 +507,17 @@
     line-height: 1.7;
   }
   .bench-summary b { color: var(--text); }
+  .bench-insight {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+  }
+  .bench-insight-row {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .bench-insight-row.warn { color: var(--accent); }
   .action-panel {
     background: var(--accent-dim);
     border: 1px solid var(--accent);
@@ -804,6 +815,13 @@
               </select>
             </label>
           </div>
+          <label style="display:block">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">영상 길이 (숏폼 제외, 롱폼만)</div>
+            <select id="benchmarkDurationSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+              <option value="medium" selected>4~20분</option>
+              <option value="long">20분 이상</option>
+            </select>
+          </label>
         </div>
         <button class="primary" id="runBenchmarkBtn" style="width:100%;margin-top:16px;padding:13px">📊 벤치마킹 시작</button>
       </div>
@@ -2418,6 +2436,7 @@ async function runBenchmark() {
   const keyword = document.getElementById('benchmarkKeywordInput').value.trim();
   const order = document.getElementById('benchmarkOrderSelect').value;
   const count = document.getElementById('benchmarkCountSelect').value;
+  const videoDuration = document.getElementById('benchmarkDurationSelect').value;
   const area = document.getElementById('benchmarkResultsArea');
   const apiKey = getApiKey();
 
@@ -2434,7 +2453,8 @@ async function runBenchmark() {
 
   try {
     const searchParams = new URLSearchParams({
-      part: 'snippet', q: keyword, type: 'video', maxResults: count, order, key: apiKey
+      part: 'snippet', q: keyword, type: 'video', maxResults: count, order,
+      videoDuration, key: apiKey
     });
     const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
     const searchData = await searchRes.json();
@@ -2467,13 +2487,14 @@ async function runBenchmark() {
     const analyzed = [];
     for (let i = 0; i < videos.length; i++) {
       const v = videos[i];
+      const titleMetrics = analyzeSeoTitle(v.title, '');
       try {
         const img = await loadImageForAnalysis(v.thumb);
         const m = analyzeImagePixels(img);
         const result = scoreThumbnail(m);
-        analyzed.push({ ...v, score: result.score, grade: result.grade, gradeColor: result.gradeColor, metrics: result.metrics });
+        analyzed.push({ ...v, score: result.score, grade: result.grade, gradeColor: result.gradeColor, metrics: result.metrics, titleMetrics });
       } catch (e) {
-        analyzed.push({ ...v, score: null, error: e.message });
+        analyzed.push({ ...v, score: null, error: e.message, titleMetrics });
       }
       area.innerHTML = `<div class="status">썸네일 ${videos.length}개 진단 중... (${i + 1}/${videos.length})</div>`;
     }
@@ -2481,19 +2502,29 @@ async function runBenchmark() {
     const scored = analyzed.filter(v => v.score !== null);
     const avgScore = scored.length ? Math.round(scored.reduce((s, v) => s + v.score, 0) / scored.length) : null;
 
-    // 공통 약점 집계 (몇 개 영상에서 ok:false 였는지)
-    const weakCounts = {};
-    scored.forEach(v => {
-      v.metrics.forEach(m => {
-        if (!m.ok) weakCounts[m.label] = (weakCounts[m.label] || 0) + 1;
+    // 공통 강점/약점 집계 (몇 개 영상에서 ok:true/false 였는지) — 썸네일 + 제목 둘 다
+    const weakCounts = {}, strongCounts = {};
+    const titleWeakCounts = {}, titleStrongCounts = {};
+    analyzed.forEach(v => {
+      (v.metrics || []).forEach(m => {
+        (m.ok ? strongCounts : weakCounts)[m.label] = ((m.ok ? strongCounts : weakCounts)[m.label] || 0) + 1;
+      });
+      (v.titleMetrics || []).forEach(m => {
+        (m.ok ? titleStrongCounts : titleWeakCounts)[m.label] = ((m.ok ? titleStrongCounts : titleWeakCounts)[m.label] || 0) + 1;
       });
     });
     const topWeak = Object.entries(weakCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const topStrong = Object.entries(strongCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const topTitleStrong = Object.entries(titleStrongCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const n = analyzed.length;
 
     const summaryHtml = avgScore !== null ? `
       <div class="bench-summary">
-        "<b>${keyword}</b>" 상위 ${scored.length}개 썸네일의 <b>평균 후킹 점수는 ${avgScore}점</b>이에요.
-        ${topWeak.length ? `공통적으로 약한 항목: ${topWeak.map(([label, cnt]) => `<b>${label}</b>(${cnt}/${scored.length}개)`).join(', ')}` : '대부분 기본기가 탄탄한 편이에요.'}
+        "<b>${keyword}</b>" 상위 ${n}개 영상의 <b>평균 썸네일 후킹 점수는 ${avgScore}점</b>이에요.<br>
+        🖼️ 썸네일 공통 강점: ${topStrong.length ? topStrong.map(([label, cnt]) => `<b>${label}</b>(${cnt}/${n})`).join(', ') : '뚜렷한 공통점 없음'}<br>
+        🖼️ 썸네일 공통 약점: ${topWeak.length ? topWeak.map(([label, cnt]) => `<b>${label}</b>(${cnt}/${n})`).join(', ') : '대부분 기본기가 탄탄함'}<br>
+        📝 제목 공통 패턴: ${topTitleStrong.length ? topTitleStrong.map(([label, cnt]) => `<b>${label}</b>(${cnt}/${n})`).join(', ') : '뚜렷한 공통점 없음'}<br>
+        <span style="font-size:11.5px">※ 조회수는 썸네일·제목 외에도 채널 인지도, 알고리즘, 업로드 시점 등 다양한 요인의 영향을 받아요. 아래는 "이 조건들과 상관관계가 있어 보인다"는 참고용 분석이에요.</span>
       </div>` : '';
 
     const cardsHtml = analyzed.map(v => {
@@ -2501,6 +2532,18 @@ async function runBenchmark() {
       const scoreBadge = v.score !== null
         ? `<span class="bench-score-badge" style="background:${v.gradeColor}">${v.score}점</span>`
         : `<span class="bench-score-badge" style="background:#666">진단 실패</span>`;
+
+      const thumbStrong = (v.metrics || []).filter(m => m.ok).map(m => m.label);
+      const thumbWeak = (v.metrics || []).filter(m => !m.ok).map(m => m.label);
+      const titleStrong = (v.titleMetrics || []).filter(m => m.ok).map(m => m.label);
+
+      const insightHtml = v.score !== null ? `
+        <div class="bench-insight">
+          ${thumbStrong.length ? `<div class="bench-insight-row">✅ 썸네일: ${thumbStrong.join(', ')}</div>` : ''}
+          ${thumbWeak.length ? `<div class="bench-insight-row warn">⚠️ 썸네일: ${thumbWeak.join(', ')}</div>` : ''}
+          ${titleStrong.length ? `<div class="bench-insight-row">✅ 제목: ${titleStrong.join(', ')}</div>` : ''}
+        </div>` : '';
+
       return `
       <div class="card bench-card">
         <a class="thumb-wrap" href="${url}" target="_blank">
@@ -2514,6 +2557,7 @@ async function runBenchmark() {
             <span>👁 ${formatViews(v.views)}회</span>
             ${v.score !== null ? `<span>${v.grade}</span>` : ''}
           </div>
+          ${insightHtml}
         </div>
       </div>`;
     }).join('');
