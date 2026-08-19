@@ -484,6 +484,29 @@
   .style-card-name { font-size: 12px; font-weight: 700; line-height: 1.3; }
   .style-card-note { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; line-height: 1.3; }
   .style-card.selected .style-card-name { color: var(--accent); }
+  .bench-score-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .bench-card .card-meta { flex-wrap: wrap; }
+  .bench-summary {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .bench-summary b { color: var(--text); }
   .action-panel {
     background: var(--accent-dim);
     border: 1px solid var(--accent);
@@ -639,6 +662,7 @@
     <div class="tabs" style="margin-bottom:16px">
       <div class="tab subtab active" data-subtab="fix">🔧 기존 이미지 진단·수정</div>
       <div class="tab subtab" data-subtab="new">🎨 썸네일 제작</div>
+      <div class="tab subtab" data-subtab="benchmark">📊 벤치마킹</div>
     </div>
 
     <div id="thumbFixPanel">
@@ -748,6 +772,42 @@
         <button class="primary" id="generateNewBtn" style="width:100%;margin-top:16px;padding:13px">🆕 새 이미지 프롬프트 만들기</button>
       </div>
       <div id="newPromptResultArea"></div>
+    </div>
+
+    <div id="thumbBenchmarkPanel" style="display:none">
+      <div class="disclaimer">
+        📊 입력한 키워드로 실제 유튜브에서 조회수 상위 영상을 검색해서, 그 썸네일들을 우리 진단기로
+        자동 분석해요. 잘 나가는 썸네일들의 공통점을 파악하는 용도예요. 검색 1회당 할당량이 소모돼요
+        (우측 상단 게이지 참고).
+      </div>
+      <div class="search-panel">
+        <div class="filters" style="flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:14px">
+          <label style="display:block">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">키워드 <span style="color:var(--accent)">*</span></div>
+            <input type="text" id="benchmarkKeywordInput" placeholder="예: 전래동화, 무서운 이야기" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
+          </label>
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <label style="flex:1;min-width:140px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px">정렬</div>
+              <select id="benchmarkOrderSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+                <option value="viewCount" selected>조회수순</option>
+                <option value="relevance">관련성순</option>
+                <option value="date">최신순</option>
+              </select>
+            </label>
+            <label style="flex:1;min-width:140px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px">개수</div>
+              <select id="benchmarkCountSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+                <option value="6">6개</option>
+                <option value="12" selected>12개</option>
+                <option value="20">20개</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <button class="primary" id="runBenchmarkBtn" style="width:100%;margin-top:16px;padding:13px">📊 벤치마킹 시작</button>
+      </div>
+      <div id="benchmarkResultsArea"></div>
     </div>
   </div>
 
@@ -960,6 +1020,7 @@ document.querySelectorAll('.subtab').forEach(tab => {
     const name = tab.dataset.subtab;
     document.getElementById('thumbFixPanel').style.display = name === 'fix' ? '' : 'none';
     document.getElementById('thumbNewPanel').style.display = name === 'new' ? '' : 'none';
+    document.getElementById('thumbBenchmarkPanel').style.display = name === 'benchmark' ? '' : 'none';
   };
 });
 
@@ -2340,6 +2401,130 @@ async function fetchSeoCompetitors(keyword) {
 }
 
 document.getElementById('analyzeSeoBtn').onclick = renderSeoResults;
+
+/* ---------- 썸네일 벤치마킹: 실제 상위 영상 검색 + 자동 진단 ---------- */
+
+function loadImageForAnalysis(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('썸네일 이미지를 불러오지 못했습니다.'));
+    img.src = url;
+  });
+}
+
+async function runBenchmark() {
+  const keyword = document.getElementById('benchmarkKeywordInput').value.trim();
+  const order = document.getElementById('benchmarkOrderSelect').value;
+  const count = document.getElementById('benchmarkCountSelect').value;
+  const area = document.getElementById('benchmarkResultsArea');
+  const apiKey = getApiKey();
+
+  if (!apiKey) {
+    area.innerHTML = `<div class="status error">먼저 우측 상단 "⚙ API 키 설정"에서 YouTube Data API 키를 등록해주세요.</div>`;
+    return;
+  }
+  if (!keyword) {
+    area.innerHTML = `<div class="status error">키워드를 입력해주세요.</div>`;
+    return;
+  }
+
+  area.innerHTML = `<div class="status">검색 중...</div>`;
+
+  try {
+    const searchParams = new URLSearchParams({
+      part: 'snippet', q: keyword, type: 'video', maxResults: count, order, key: apiKey
+    });
+    const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
+    const searchData = await searchRes.json();
+    addQuotaUnits(UNIT_COST.search);
+    if (searchData.error) throw new Error(searchData.error.message);
+
+    const ids = (searchData.items || []).map(it => it.id.videoId).filter(Boolean);
+    if (!ids.length) {
+      area.innerHTML = `<div class="empty">검색 결과가 없습니다. 다른 키워드로 시도해보세요.</div>`;
+      return;
+    }
+
+    const detailParams = new URLSearchParams({ part: 'snippet,statistics', id: ids.join(','), key: apiKey });
+    const detailRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?${detailParams}`);
+    const detailData = await detailRes.json();
+    addQuotaUnits(UNIT_COST.videos);
+    if (detailData.error) throw new Error(detailData.error.message);
+
+    const videos = (detailData.items || []).map(it => ({
+      id: it.id,
+      title: it.snippet.title,
+      channel: it.snippet.channelTitle,
+      thumb: it.snippet.thumbnails?.medium?.url || it.snippet.thumbnails?.default?.url,
+      views: parseInt(it.statistics?.viewCount || 0, 10),
+      publishedAt: it.snippet.publishedAt
+    }));
+
+    area.innerHTML = `<div class="status">썸네일 ${videos.length}개 진단 중... (0/${videos.length})</div>`;
+
+    const analyzed = [];
+    for (let i = 0; i < videos.length; i++) {
+      const v = videos[i];
+      try {
+        const img = await loadImageForAnalysis(v.thumb);
+        const m = analyzeImagePixels(img);
+        const result = scoreThumbnail(m);
+        analyzed.push({ ...v, score: result.score, grade: result.grade, gradeColor: result.gradeColor, metrics: result.metrics });
+      } catch (e) {
+        analyzed.push({ ...v, score: null, error: e.message });
+      }
+      area.innerHTML = `<div class="status">썸네일 ${videos.length}개 진단 중... (${i + 1}/${videos.length})</div>`;
+    }
+
+    const scored = analyzed.filter(v => v.score !== null);
+    const avgScore = scored.length ? Math.round(scored.reduce((s, v) => s + v.score, 0) / scored.length) : null;
+
+    // 공통 약점 집계 (몇 개 영상에서 ok:false 였는지)
+    const weakCounts = {};
+    scored.forEach(v => {
+      v.metrics.forEach(m => {
+        if (!m.ok) weakCounts[m.label] = (weakCounts[m.label] || 0) + 1;
+      });
+    });
+    const topWeak = Object.entries(weakCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+    const summaryHtml = avgScore !== null ? `
+      <div class="bench-summary">
+        "<b>${keyword}</b>" 상위 ${scored.length}개 썸네일의 <b>평균 후킹 점수는 ${avgScore}점</b>이에요.
+        ${topWeak.length ? `공통적으로 약한 항목: ${topWeak.map(([label, cnt]) => `<b>${label}</b>(${cnt}/${scored.length}개)`).join(', ')}` : '대부분 기본기가 탄탄한 편이에요.'}
+      </div>` : '';
+
+    const cardsHtml = analyzed.map(v => {
+      const url = `https://www.youtube.com/watch?v=${v.id}`;
+      const scoreBadge = v.score !== null
+        ? `<span class="bench-score-badge" style="background:${v.gradeColor}">${v.score}점</span>`
+        : `<span class="bench-score-badge" style="background:#666">진단 실패</span>`;
+      return `
+      <div class="card bench-card">
+        <a class="thumb-wrap" href="${url}" target="_blank">
+          <img src="${v.thumb}" loading="lazy" alt="">
+          ${scoreBadge}
+        </a>
+        <div class="card-body">
+          <a class="card-title" href="${url}" target="_blank">${v.title}</a>
+          <div class="card-channel">${v.channel}</div>
+          <div class="card-meta">
+            <span>👁 ${formatViews(v.views)}회</span>
+            ${v.score !== null ? `<span>${v.grade}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    area.innerHTML = `${summaryHtml}<div class="grid">${cardsHtml}</div>`;
+  } catch (err) {
+    area.innerHTML = `<div class="status error">오류: ${err.message}</div>`;
+  }
+}
+
+document.getElementById('runBenchmarkBtn').onclick = runBenchmark;
 </script>
 
 </body>
