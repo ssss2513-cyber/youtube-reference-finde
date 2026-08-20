@@ -698,8 +698,8 @@
 
   <div id="introTab" style="display:none">
     <div class="disclaimer">
-      🎬 영상 시작 부분을 붙여넣으면 첫 장면의 즉시성·호기심·갈등·시각성·정보 밀도를 규칙 기반으로 진단합니다.
-      결과는 참고용이며, 이미지·영상 프롬프트 생성과 복사는 무료이고 별도 API를 사용하지 않습니다.
+      🎬 6초 인트로 영상을 넣으면 초반 움직임·프레임 변화·밝기·대비·장면 안정성을 브라우저에서 직접 분석합니다.
+      영상은 외부로 전송되지 않으며, 이미지·영상 프롬프트 생성과 복사는 무료이고 별도 API를 사용하지 않습니다.
     </div>
     <div class="search-panel">
       <div class="filters" style="flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:14px">
@@ -708,8 +708,19 @@
           <input type="text" id="introTopicInput" placeholder="예: 조선시대 암행어사와 가난한 주막 이야기" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
         </label>
         <label style="display:block">
-          <div style="font-size:13px;font-weight:600;margin-bottom:6px">진단할 인트로 대본 <span style="color:var(--accent)">*</span></div>
-          <textarea id="introScriptInput" rows="8" placeholder="영상 시작 15~30초에 해당하는 대본이나 장면 설명을 붙여넣으세요..." style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px;font-family:inherit;resize:vertical"></textarea>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">6초 인트로 영상 <span style="color:var(--accent)">*</span></div>
+          <span class="upload-dropzone" id="introVideoDropzone" style="display:block">
+            <input type="file" id="introVideoInput" accept="video/mp4,video/webm,video/quicktime,video/*" style="display:none">
+            <span id="introVideoUploadLabel">📤 6초 인트로 영상을 선택하세요 (MP4·WebM 권장)</span>
+          </span>
+          <div id="introVideoPreviewWrap" style="display:none;margin-top:12px">
+            <video id="introVideoPreview" controls muted playsinline style="display:block;width:100%;max-height:420px;background:#000;border-radius:10px"></video>
+            <div id="introVideoMeta" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
+          </div>
+        </label>
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">장면 설명 / 대사 (선택)</div>
+          <textarea id="introScriptInput" rows="4" placeholder="예: 눈보라 속 선비가 주막 문을 두드리며 하룻밤만 재워달라고 말한다..." style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px;font-family:inherit;resize:vertical"></textarea>
         </label>
         <div style="display:flex;gap:14px;flex-wrap:wrap">
           <label style="flex:1;min-width:160px">
@@ -722,18 +733,10 @@
               <option value="entertainment">예능·재미</option>
             </select>
           </label>
-          <label style="flex:1;min-width:160px">
-            <div style="font-size:13px;font-weight:600;margin-bottom:6px">목표 인트로 길이</div>
-            <select id="introDurationSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
-              <option value="10">10초</option>
-              <option value="15" selected>15초</option>
-              <option value="20">20초</option>
-              <option value="30">30초</option>
-            </select>
-          </label>
+          <div style="flex:1;min-width:160px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--chip-bg);font-size:13px;color:var(--text-dim)">⏱️ 진단 기준: <b style="color:var(--text)">6초</b> (5.5~6.5초 허용)</div>
         </div>
       </div>
-      <button class="primary" id="analyzeIntroBtn" style="width:100%;margin-top:16px;padding:13px">🎬 인트로 진단하고 프롬프트 만들기</button>
+      <button class="primary" id="analyzeIntroBtn" style="width:100%;margin-top:16px;padding:13px">🎬 6초 영상 진단하고 프롬프트 만들기</button>
     </div>
     <div id="introResultsArea"></div>
   </div>
@@ -2345,34 +2348,75 @@ const INTRO_GENRE_META = {
   entertainment: { label: '예능·재미', visual: '밝고 역동적인 예능형 영상 스틸, 생생한 색감, 과장되지 않은 재미있는 표정, 에너지 있는 구도', motion: '빠른 카메라 접근과 인물의 즉각적인 리액션, 마지막 순간에 코믹한 결과가 드러나는 움직임' }
 };
 
-function analyzeIntroScript(script) {
-  const firstSentence = script.split(/[.!?。！？\n]/).map(s => s.trim()).find(Boolean) || script.trim();
+let introVideoObjectUrl = '';
+let introVideoReady = false;
+
+function seekIntroVideo(video, time) {
+  return new Promise((resolve, reject) => {
+    const done = () => { cleanup(); resolve(); };
+    const fail = () => { cleanup(); reject(new Error('영상 프레임을 읽지 못했습니다.')); };
+    const cleanup = () => { video.removeEventListener('seeked', done); video.removeEventListener('error', fail); };
+    video.addEventListener('seeked', done, { once: true });
+    video.addEventListener('error', fail, { once: true });
+    video.currentTime = Math.min(Math.max(0, time), Math.max(0, video.duration - 0.05));
+  });
+}
+
+function readIntroFrame(ctx, canvas) {
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const gray = new Uint8Array(canvas.width * canvas.height);
+  let sum = 0;
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const value = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+    gray[p] = value;
+    sum += value;
+  }
+  const mean = sum / gray.length;
+  let variance = 0;
+  for (const value of gray) variance += (value - mean) ** 2;
+  return { gray, brightness: mean, contrast: Math.sqrt(variance / gray.length) };
+}
+
+function frameDifference(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+  return sum / a.length;
+}
+
+async function analyzeIntroVideo(video) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 160;
+  canvas.height = 90;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const end = Math.max(0.3, video.duration - 0.15);
+  const times = [0.2, Math.min(1.5, end), Math.min(3, end), Math.min(4.5, end), end];
+  const frames = [];
+  for (const time of times) {
+    await seekIntroVideo(video, time);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    frames.push(readIntroFrame(ctx, canvas));
+  }
+  const diffs = frames.slice(1).map((frame, index) => frameDifference(frames[index].gray, frame.gray));
+  const avgDiff = diffs.reduce((sum, value) => sum + value, 0) / diffs.length;
+  const maxDiff = Math.max(...diffs);
+  const avgBrightness = frames.reduce((sum, frame) => sum + frame.brightness, 0) / frames.length;
+  const avgContrast = frames.reduce((sum, frame) => sum + frame.contrast, 0) / frames.length;
   const metrics = [];
-  const addMetric = (label, ok, weight, good, fix) => metrics.push({ label, ok, weight, tip: ok ? good : fix });
-  addMetric('첫 문장 즉시성', firstSentence.length > 0 && firstSentence.length <= 55, 20,
-    '첫 문장이 짧아 시작 장면과 상황을 빠르게 받아들일 수 있어요.',
-    '첫 문장을 55자 이내로 줄이고, 배경 설명보다 가장 위험하거나 이상한 사건부터 보여주세요.');
-  const curiosity = /(왜|어떻게|정체|비밀|사라|그날|그런데|하지만|알고 보니|무슨|대체|유일|절대)/.test(script);
-  addMetric('호기심의 빈칸', curiosity, 20,
-    '결과를 바로 밝히지 않는 정보의 빈칸이 있어 다음 장면을 궁금하게 만듭니다.',
-    '정답을 모두 설명하지 말고 “왜 사라졌을까?”, “문을 연 순간”처럼 확인해야 할 빈칸을 하나 만드세요.');
-  const conflict = /(위기|쫓|죽|금지|막|싸|거절|사라|무너|가난|병|복수|위험|갇|도망|울|절규)/.test(script);
-  addMetric('갈등·위험 신호', conflict, 20,
-    '인물이 잃을 것과 위험이 드러나 이야기의 긴장감이 선명합니다.',
-    '주인공이 지금 무엇을 잃을 수 있는지, 누가 막고 있는지 또는 어떤 위험이 닥쳤는지 한 문장으로 넣으세요.');
-  const visual = /(문|불|눈|손|얼굴|피|비|눈보라|등불|달|집|산|길|칼|그림자|땅|마을|방|창|뛰|열|닫|쓰러)/.test(script);
-  addMetric('첫 장면 시각성', visual, 20,
-    '눈에 보이는 대상과 행동이 있어 이미지와 영상 장면으로 옮기기 좋습니다.',
-    '추상적인 설명 대신 장소·인물·소품·행동을 넣으세요. 예: “눈보라 속 주막 문을 두드리는 젖은 선비”.');
-  const lengthFit = script.length >= 70 && script.length <= 430;
-  addMetric('인트로 정보량', lengthFit, 10,
-    '첫 10~30초에 담기 적당한 정보량입니다.',
-    script.length < 70 ? '상황과 위험을 한두 문장 더 추가해 장면의 맥락을 분명하게 만드세요.' : '설명이 많습니다. 사건·위험·궁금증만 남기고 430자 이내로 압축하세요.');
-  const specific = /[0-9一二三四五六七八九十]|["“”'‘’]|(하룻밤|사흘|한 사람|단 하나|처음|마지막)/.test(script);
-  addMetric('구체적인 단서', specific, 10,
-    '숫자·대사·시간 같은 구체적인 단서가 장면을 기억하기 쉽게 만듭니다.',
-    '짧은 직접 대사, 시간, 숫자 또는 단 하나의 특이한 물건을 넣어 장면을 구체화하세요.');
-  return { score: metrics.filter(metric => metric.ok).reduce((sum, metric) => sum + metric.weight, 0), metrics };
+  const add = (label, ok, weight, good, fix, value) => metrics.push({ label, ok, weight, tip: ok ? good : fix, value });
+  add('6초 길이', video.duration >= 5.5 && video.duration <= 6.5, 15,
+    '6초 인트로 기준에 맞는 길이입니다.', '영상 길이를 5.5~6.5초로 맞춰 핵심 장면만 남기세요.', `${video.duration.toFixed(2)}초`);
+  add('첫 화면 대비', frames[0].contrast >= 38, 20,
+    '첫 화면의 명암 구분이 뚜렷해 시선이 빠르게 고정됩니다.', '첫 화면에서 핵심 인물과 배경의 밝기 차이를 키우고 불필요한 배경 요소를 줄이세요.', `${Math.round(frames[0].contrast)}`);
+  add('첫 2초 움직임', diffs[0] >= 6, 20,
+    '첫 2초 안에 눈에 띄는 변화가 있어 정지 화면처럼 느껴지지 않습니다.', '첫 2초 안에 인물 행동, 카메라 접근 또는 핵심 소품의 움직임을 더하세요.', `${diffs[0].toFixed(1)}`);
+  add('전체 움직임', avgDiff >= 5 && avgDiff <= 42, 20,
+    '6초 동안 움직임이 너무 정적이지도 과하지도 않습니다.', avgDiff < 5 ? '영상이 너무 정적입니다. 인물의 표정·손·옷자락 또는 느린 카메라 움직임을 추가하세요.' : '프레임 변화가 너무 큽니다. 급격한 줌·흔들림·잦은 장면 전환을 줄이세요.', `${avgDiff.toFixed(1)}`);
+  add('밝기 가독성', avgBrightness >= 45 && avgBrightness <= 210, 15,
+    '주요 피사체를 알아보기 적당한 평균 밝기입니다.', avgBrightness < 45 ? '전체가 너무 어둡습니다. 인물 얼굴이나 핵심 소품에 보조광을 추가하세요.' : '밝은 영역이 많습니다. 하이라이트를 낮추고 핵심 대상 주변의 명암을 복원하세요.', `${Math.round(avgBrightness)}`);
+  add('장면 안정성', maxDiff <= 65, 10,
+    '장면 변화가 안정적이라 인물과 상황을 따라가기 쉽습니다.', '갑작스러운 컷이나 큰 화면 변화를 줄이고 하나의 행동을 연속적으로 보여주세요.', `${maxDiff.toFixed(1)}`);
+  const score = metrics.filter(metric => metric.ok).reduce((sum, metric) => sum + metric.weight, 0);
+  return { score, metrics, summary: { avgDiff, avgBrightness, avgContrast } };
 }
 
 function buildIntroPrompts(topic, script, genreKey, duration) {
@@ -2394,28 +2438,42 @@ function buildIntroPrompts(topic, script, genreKey, duration) {
   return { imagePrompt, videoPrompt };
 }
 
-function renderIntroDiagnosis() {
+async function renderIntroDiagnosis() {
   const topic = document.getElementById('introTopicInput').value.trim();
   const script = document.getElementById('introScriptInput').value.trim();
   const area = document.getElementById('introResultsArea');
-  if (!topic || !script) {
-    area.innerHTML = '<div class="status error">영상 주제와 인트로 대본을 모두 입력해주세요.</div>';
+  const video = document.getElementById('introVideoPreview');
+  if (!topic || !introVideoReady) {
+    area.innerHTML = '<div class="status error">영상 주제를 입력하고 진단할 6초 영상을 선택해주세요.</div>';
     return;
   }
-  const diagnosis = analyzeIntroScript(script);
-  const prompts = buildIntroPrompts(topic, script, document.getElementById('introGenreSelect').value, document.getElementById('introDurationSelect').value);
-  const needsWork = diagnosis.metrics.filter(metric => !metric.ok).sort((a, b) => b.weight - a.weight);
-  const grade = diagnosis.score >= 80 ? '강한 인트로' : diagnosis.score >= 60 ? '보완하면 강해질 인트로' : '후킹 보강 필요';
-  area.innerHTML = `
+  const button = document.getElementById('analyzeIntroBtn');
+  const originalButtonText = button.textContent;
+  button.disabled = true;
+  button.textContent = '프레임 분석 중...';
+  area.innerHTML = '<div class="status">6초 영상에서 5개 프레임을 추출해 분석하고 있습니다...</div>';
+  try {
+    const diagnosis = await analyzeIntroVideo(video);
+    const sceneText = script || '업로드한 6초 영상의 핵심 인물, 장소, 행동과 분위기를 유지하되 진단에서 부족한 부분을 보완';
+    const prompts = buildIntroPrompts(topic, sceneText, document.getElementById('introGenreSelect').value, 6);
+    const needsWork = diagnosis.metrics.filter(metric => !metric.ok).sort((a, b) => b.weight - a.weight);
+    const grade = diagnosis.score >= 80 ? '강한 6초 인트로' : diagnosis.score >= 60 ? '보완하면 강해질 인트로' : '영상 후킹 보강 필요';
+    area.innerHTML = `
     <div class="action-panel ${needsWork.length ? '' : 'all-good'}">
       <h3>🎯 인트로 후킹 점수 ${diagnosis.score}점 · ${grade}</h3>
       ${needsWork.length ? needsWork.map((metric, index) => `<div class="action-item"><div class="action-num">${index + 1}</div><div class="action-text"><b>${escapeHtml(metric.label)} 수정</b>${escapeHtml(metric.tip)}</div></div>`).join('') : '<div class="action-text">핵심 후킹 요소가 모두 들어 있습니다. 아래 프롬프트로 첫 장면 제작을 시작해보세요.</div>'}
     </div>
-    <div class="metrics-grid">${diagnosis.metrics.map(metric => `<div class="metric-card ${metric.ok ? 'ok' : 'bad'}"><div class="metric-head"><span>${metric.ok ? '✓' : '!'}</span><b>${escapeHtml(metric.label)}</b><span>${metric.weight}점</span></div><div class="metric-tip">${escapeHtml(metric.tip)}</div></div>`).join('')}</div>
+    <div class="metrics-grid">${diagnosis.metrics.map(metric => `<div class="metric-card ${metric.ok ? 'ok' : 'bad'}"><div class="metric-head"><span>${metric.ok ? '✓' : '!'}</span><b>${escapeHtml(metric.label)}</b><span>${escapeHtml(metric.value)}</span></div><div class="metric-tip">${escapeHtml(metric.tip)}</div></div>`).join('')}</div>
     <div class="search-panel" style="margin-top:18px"><h3 style="margin:0 0 8px;font-size:15px">🖼️ 이미지 프롬프트</h3><textarea rows="10" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.imagePrompt)}</textarea><button class="primary" id="copyIntroImagePromptBtn" style="width:100%;margin-top:10px">📋 이미지 프롬프트 복사</button></div>
     <div class="search-panel"><h3 style="margin:0 0 8px;font-size:15px">🎥 영상 프롬프트</h3><textarea rows="11" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.videoPrompt)}</textarea><button class="primary" id="copyIntroVideoPromptBtn" style="width:100%;margin-top:10px">📋 영상 프롬프트 복사</button></div>`;
-  attachIntroCopyButton('copyIntroImagePromptBtn', prompts.imagePrompt, '이미지 프롬프트');
-  attachIntroCopyButton('copyIntroVideoPromptBtn', prompts.videoPrompt, '영상 프롬프트');
+    attachIntroCopyButton('copyIntroImagePromptBtn', prompts.imagePrompt, '이미지 프롬프트');
+    attachIntroCopyButton('copyIntroVideoPromptBtn', prompts.videoPrompt, '영상 프롬프트');
+  } catch (error) {
+    area.innerHTML = `<div class="status error">영상 분석 오류: ${escapeHtml(error.message)}<br><span style="font-size:12px">MP4(H.264) 또는 WebM 형식으로 다시 시도해주세요.</span></div>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = originalButtonText;
+  }
 }
 
 function attachIntroCopyButton(id, text, label) {
@@ -2430,6 +2488,32 @@ function attachIntroCopyButton(id, text, label) {
     } catch (e) { prompt_dialog(text); }
   };
 }
+
+const introVideoInput = document.getElementById('introVideoInput');
+introVideoInput.onchange = () => {
+  const file = introVideoInput.files?.[0];
+  const video = document.getElementById('introVideoPreview');
+  const wrap = document.getElementById('introVideoPreviewWrap');
+  const label = document.getElementById('introVideoUploadLabel');
+  const meta = document.getElementById('introVideoMeta');
+  introVideoReady = false;
+  if (!file) return;
+  if (introVideoObjectUrl) URL.revokeObjectURL(introVideoObjectUrl);
+  introVideoObjectUrl = URL.createObjectURL(file);
+  video.src = introVideoObjectUrl;
+  wrap.style.display = '';
+  label.textContent = `🎥 ${file.name}`;
+  meta.textContent = '영상 정보 확인 중...';
+  video.onloadedmetadata = () => {
+    introVideoReady = true;
+    const inRange = video.duration >= 5.5 && video.duration <= 6.5;
+    meta.innerHTML = `길이 <b>${video.duration.toFixed(2)}초</b> · ${video.videoWidth}×${video.videoHeight} · ${inRange ? '<span style="color:#2fbf71">6초 기준 적합</span>' : '<span style="color:var(--accent)">5.5~6.5초로 조정 권장</span>'}`;
+  };
+  video.onerror = () => {
+    introVideoReady = false;
+    meta.innerHTML = '<span style="color:var(--accent)">이 영상 형식을 브라우저에서 읽지 못했습니다. MP4(H.264) 또는 WebM으로 변환해주세요.</span>';
+  };
+};
 
 document.getElementById('analyzeIntroBtn').onclick = renderIntroDiagnosis;
 
