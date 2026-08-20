@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: semantic-hook-reasoning-v5 -->
+<!-- deploy-version: recommendation-save-v6 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1270,6 +1270,7 @@ function buildPerformanceFallback(videos, query) {
 }
 
 function renderHookRecommendations(videos, query) {
+  const savedIds = new Set(getSaved().map(video => video.id));
   const eligible = videos
     .map(video => ({ video, hook: analyzeTitleHook(video, query) }))
     .filter(item => item.hook.score >= 80);
@@ -1295,6 +1296,7 @@ function renderHookRecommendations(videos, query) {
                 </div>
                 <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
                 <div class="hook-reason"><b>추천 이유:</b> ${reasons.map(escapeHtml).join(' · ')}</div>
+                <button class="save-btn ${savedIds.has(video.id) ? 'saved' : ''}" data-id="${video.id}" style="margin-top:9px">${savedIds.has(video.id) ? '★ 저장됨' : '☆ 레퍼런스 저장'}</button>
               </div>
             </div>
           </article>`).join('')}
@@ -1318,6 +1320,7 @@ function renderHookRecommendations(videos, query) {
               </div>
               <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
               <div class="hook-reason"><b>추천 이유:</b> ${hook.reasons.map(escapeHtml).join(' 또한, ')}</div>
+              <button class="save-btn ${savedIds.has(video.id) ? 'saved' : ''}" data-id="${video.id}" style="margin-top:9px">${savedIds.has(video.id) ? '★ 저장됨' : '☆ 레퍼런스 저장'}</button>
             </div>
           </div>
         </article>`).join('')}
@@ -1354,17 +1357,19 @@ function attachSaveHandlers(container, videoMap) {
       const idx = saved.findIndex(x => x.id === id);
       if (idx >= 0) {
         saved.splice(idx, 1);
-        btn.classList.remove('saved');
-        btn.textContent = '☆ 저장';
       } else {
         const v = videoMap[id];
         if (v) {
           saved.push(v);
-          btn.classList.add('saved');
-          btn.textContent = '★ 저장됨';
         }
       }
       setSaved(saved);
+      const isNowSaved = saved.some(video => video.id === id);
+      container.querySelectorAll('.save-btn').forEach(otherBtn => {
+        if (otherBtn.dataset.id !== id) return;
+        otherBtn.classList.toggle('saved', isNowSaved);
+        otherBtn.textContent = isNowSaved ? '★ 저장됨' : (otherBtn.closest('.hook-pick') ? '☆ 레퍼런스 저장' : '☆ 저장');
+      });
       updateSavedCount();
     };
   });
