@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: recommendation-save-v6 -->
+<!-- deploy-version: next-performance-recommendations-v7 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1269,6 +1269,8 @@ function buildPerformanceFallback(videos, query) {
   }).sort((a, b) => b.performanceScore - a.performanceScore);
 }
 
+let lastPerformanceRecommendationIds = [];
+
 function renderHookRecommendations(videos, query) {
   const savedIds = new Set(getSaved().map(video => video.id));
   const eligible = videos
@@ -1276,7 +1278,11 @@ function renderHookRecommendations(videos, query) {
     .filter(item => item.hook.score >= 80);
   const picks = shuffleList(eligible).slice(0, 3);
   if (!picks.length) {
-    const performancePicks = shuffleList(buildPerformanceFallback(videos, query).slice(0, Math.min(5, videos.length))).slice(0, 3);
+    const rankedPool = buildPerformanceFallback(videos, query).slice(0, Math.min(10, videos.length));
+    const unseen = rankedPool.filter(item => !lastPerformanceRecommendationIds.includes(item.video.id));
+    const candidates = unseen.length >= 3 ? unseen : [...unseen, ...rankedPool.filter(item => lastPerformanceRecommendationIds.includes(item.video.id))];
+    const performancePicks = shuffleList(candidates).slice(0, 3);
+    lastPerformanceRecommendationIds = performancePicks.map(item => item.video.id);
     return `
       <section class="hook-recommend-panel">
         <h3>📈 성과 지표 기반 카피 레퍼런스</h3>
@@ -1300,6 +1306,7 @@ function renderHookRecommendations(videos, query) {
               </div>
             </div>
           </article>`).join('')}
+        <button class="icon-btn" id="refreshPerformanceRecommendationsBtn" style="width:100%;margin-top:12px;padding:10px">🔄 다른 추천 3개 보기</button>
       </section>`;
   }
   return `
@@ -1325,6 +1332,22 @@ function renderHookRecommendations(videos, query) {
           </div>
         </article>`).join('')}
     </section>`;
+}
+
+function attachPerformanceRefreshHandler(container, videos, query, videoMap) {
+  const button = container.querySelector('#refreshPerformanceRecommendationsBtn');
+  if (!button) return;
+  button.onclick = () => {
+    const currentPanel = button.closest('.hook-recommend-panel');
+    if (!currentPanel) return;
+    const holder = document.createElement('div');
+    holder.innerHTML = renderHookRecommendations(videos, query);
+    const nextPanel = holder.firstElementChild;
+    if (!nextPanel) return;
+    currentPanel.replaceWith(nextPanel);
+    attachSaveHandlers(container, videoMap);
+    attachPerformanceRefreshHandler(container, videos, query, videoMap);
+  };
 }
 
 function cardHTML(v, isSaved) {
@@ -1501,6 +1524,7 @@ async function doSearch() {
 
     resultsArea.innerHTML = `${renderHookRecommendations(videos, query)}<div class="grid">${videos.map(v => cardHTML(v, savedIds.has(v.id))).join('')}</div>`;
     attachSaveHandlers(resultsArea, map);
+    attachPerformanceRefreshHandler(resultsArea, videos, query, map);
   } catch (err) {
     resultsArea.innerHTML = `<div class="status error">오류: ${err.message}<br><span style="font-size:12px">API 키가 올바른지, YouTube Data API v3가 활성화되어 있는지 확인해주세요.</span></div>`;
   }
