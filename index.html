@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: diverse-no-repeat-recommendations-v8 -->
+<!-- deploy-version: three-at-a-time-recommendations-v9 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1277,7 +1277,7 @@ function renderHookRecommendations(videos, query) {
   const eligible = videos
     .map(video => ({ video, hook: analyzeTitleHook(video, query) }))
     .filter(item => item.hook.score >= 80);
-  const picks = shuffleList(eligible).slice(0, 6);
+  const picks = shuffleList(eligible).slice(0, 3);
   if (!picks.length) {
     const cycleKey = `${query}|${videos.map(video => video.id).join(',')}`;
     if (performanceRecommendationCycleKey !== cycleKey) {
@@ -1291,7 +1291,7 @@ function renderHookRecommendations(videos, query) {
       unseen = rankedPool;
     }
     const candidateWindow = unseen.slice(0, Math.min(12, unseen.length));
-    const performancePicks = shuffleList(candidateWindow).slice(0, 6);
+    const performancePicks = shuffleList(candidateWindow).slice(0, 3);
     performancePicks.forEach(item => performanceRecommendationSeenIds.add(item.video.id));
     const remainingCount = Math.max(0, rankedPool.length - performanceRecommendationSeenIds.size);
     return `
@@ -1317,7 +1317,7 @@ function renderHookRecommendations(videos, query) {
               </div>
             </div>
           </article>`).join('')}
-        <button class="icon-btn" id="refreshPerformanceRecommendationsBtn" style="width:100%;margin-top:12px;padding:10px">${remainingCount > 0 ? `🔄 다른 추천 6개 보기 · 안 본 후보 ${remainingCount}개` : '🔄 모든 후보 확인 완료 · 처음부터 다시 보기'}</button>
+        <button class="icon-btn" id="refreshPerformanceRecommendationsBtn" style="width:100%;margin-top:12px;padding:10px">${remainingCount > 0 ? `🔄 다른 추천 3개 보기 · 안 본 후보 ${remainingCount}개` : '🔄 모든 후보 확인 완료 · 처음부터 다시 보기'}</button>
       </section>`;
   }
   return `
