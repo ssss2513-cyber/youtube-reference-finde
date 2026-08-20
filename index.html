@@ -699,8 +699,8 @@
 
   <div id="introTab" style="display:none">
     <div class="disclaimer">
-      🎬 6초 인트로 영상을 넣으면 초반 움직임·프레임 변화·밝기·대비·장면 안정성을 브라우저에서 직접 분석합니다.
-      영상은 외부로 전송되지 않으며, 이미지·영상 프롬프트 생성과 복사는 무료이고 별도 API를 사용하지 않습니다.
+      🎬 처음 제작할 때는 기획안만 넣어 이미지·영상 프롬프트를 만들 수 있습니다. 기존 결과를 고칠 때는
+      이미지 또는 6초 영상을 함께 넣어 진단하세요. 파일은 외부로 전송되지 않으며 별도 API를 사용하지 않습니다.
     </div>
     <div class="search-panel">
       <div class="filters" style="flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:14px">
@@ -709,11 +709,20 @@
           <input type="text" id="introTopicInput" placeholder="예: 조선시대 암행어사와 가난한 주막 이야기" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
         </label>
         <label style="display:block">
-          <div style="font-size:13px;font-weight:600;margin-bottom:6px">6초 인트로 영상 <span style="color:var(--accent)">*</span></div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">인트로 기획안 <span style="color:var(--accent)">*</span></div>
+          <textarea id="introPlanInput" rows="9" placeholder="예: ===== 씬 1 =====&#10;[등장] @samdol (근접 클로즈업, 정면 시선)&#10;[씬 종류] 대사 (lip-sync)&#10;[구도·판정] 단독, Hard push-in&#10;[감정선] 정적 긴장 → 시선 고정 무브" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px;font-family:inherit;resize:vertical"></textarea>
+          <div style="font-size:11.5px;color:var(--text-dim);margin-top:5px">씬별 등장인물·구도·카메라·감정선·대사·스타일 지시를 자유롭게 붙여넣으세요.</div>
+        </label>
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">진단할 이미지 또는 6초 영상 (선택)</div>
           <span class="upload-dropzone" id="introVideoDropzone" style="display:block">
-            <input type="file" id="introVideoInput" accept="video/mp4,video/webm,video/quicktime,video/*" style="display:none">
-            <span id="introVideoUploadLabel">📤 6초 인트로 영상을 선택하세요 (MP4·WebM 권장)</span>
+            <input type="file" id="introMediaInput" accept="image/*,video/mp4,video/webm,video/quicktime,video/*" style="display:none">
+            <span id="introVideoUploadLabel">📤 이미지 또는 6초 영상을 선택하세요</span>
           </span>
+          <div id="introImagePreviewWrap" style="display:none;margin-top:12px">
+            <img id="introImagePreview" alt="인트로 이미지 미리보기" style="display:block;width:100%;max-height:420px;object-fit:contain;background:#000;border-radius:10px">
+            <div id="introImageMeta" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
+          </div>
           <div id="introVideoPreviewWrap" style="display:none;margin-top:12px">
             <video id="introVideoPreview" controls muted playsinline style="display:block;width:100%;max-height:420px;background:#000;border-radius:10px"></video>
             <div id="introVideoMeta" style="font-size:12px;color:var(--text-dim);margin-top:6px"></div>
@@ -734,10 +743,10 @@
               <option value="entertainment">예능·재미</option>
             </select>
           </label>
-          <div style="flex:1;min-width:160px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--chip-bg);font-size:13px;color:var(--text-dim)">⏱️ 진단 기준: <b style="color:var(--text)">6초</b> (5.5~6.5초 허용)</div>
+          <div style="flex:1;min-width:160px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--chip-bg);font-size:13px;color:var(--text-dim)">🖼️ 이미지: 16:9 권장<br>🎥 영상: <b style="color:var(--text)">6초</b> (5.5~6.5초 허용)</div>
         </div>
       </div>
-      <button class="primary" id="analyzeIntroBtn" style="width:100%;margin-top:16px;padding:13px">🎬 6초 영상 진단하고 프롬프트 만들기</button>
+      <button class="primary" id="analyzeIntroBtn" style="width:100%;margin-top:16px;padding:13px">🎬 기획안으로 진단·제작 프롬프트 만들기</button>
     </div>
     <div id="introResultsArea"></div>
   </div>
@@ -2351,6 +2360,7 @@ const INTRO_GENRE_META = {
 
 let introVideoObjectUrl = '';
 let introVideoReady = false;
+let introMediaType = '';
 
 function seekIntroVideo(video, time) {
   return new Promise((resolve, reject) => {
@@ -2382,6 +2392,26 @@ function frameDifference(a, b) {
   let sum = 0;
   for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
   return sum / a.length;
+}
+
+function analyzeIntroImage(img) {
+  const m = analyzeImagePixels(img);
+  const metrics = [];
+  const add = (label, ok, weight, good, fix, value) => metrics.push({ label, ok, weight, tip: ok ? good : fix, value });
+  const ratio = m.naturalW / Math.max(1, m.naturalH);
+  add('16:9 화면비', Math.abs(ratio - 16 / 9) <= 0.12, 20,
+    '유튜브 인트로에 적합한 16:9 화면비입니다.', '화면을 16:9 비율로 다시 잘라 영상 시작 시 여백이나 잘림이 생기지 않게 하세요.', `${m.naturalW}×${m.naturalH}`);
+  add('이미지 해상도', m.naturalW >= 1280 && m.naturalH >= 720, 15,
+    '720p 이상이라 영상에서 선명하게 사용할 수 있습니다.', '최소 1280×720 이상으로 다시 생성하거나 고해상도 원본을 사용하세요.', `${m.naturalW}×${m.naturalH}`);
+  add('명암 대비', m.stdLum >= 38, 20,
+    '핵심 대상과 배경의 명암 구분이 뚜렷합니다.', '인물·핵심 소품과 배경 사이의 밝기 차이를 키워 첫눈에 시선이 고정되게 하세요.', `${Math.round(m.stdLum)}`);
+  add('밝기 가독성', m.avgLum >= 45 && m.avgLum <= 210, 15,
+    '주요 피사체를 알아보기 적당한 밝기입니다.', m.avgLum < 45 ? '핵심 인물의 얼굴과 중요한 소품에 보조광을 추가하세요.' : '밝은 영역을 낮추고 하이라이트의 세부 묘사를 복원하세요.', `${Math.round(m.avgLum)}`);
+  add('시각적 복잡도', m.edgeDensity >= 0.035 && m.edgeDensity <= 0.42, 15,
+    '화면이 지나치게 비거나 복잡하지 않아 첫 장면을 빠르게 이해할 수 있습니다.', m.edgeDensity < 0.035 ? '핵심 행동이나 사건을 암시하는 소품을 하나 추가하세요.' : '배경의 작은 물체와 무늬를 줄여 인물과 사건에 집중시키세요.', m.edgeDensity.toFixed(2));
+  add('색감 집중도', m.avgSat >= 0.12 && m.avgSat <= 0.68, 15,
+    '색감이 너무 탁하거나 과하지 않아 시선 집중에 적절합니다.', m.avgSat < 0.12 ? '핵심 피사체에 포인트 색을 추가해 배경과 분리하세요.' : '전체 채도를 낮추고 핵심 대상에만 강한 색을 남기세요.', m.avgSat.toFixed(2));
+  return { score: metrics.filter(metric => metric.ok).reduce((sum, metric) => sum + metric.weight, 0), metrics };
 }
 
 async function analyzeIntroVideo(video) {
@@ -2420,53 +2450,68 @@ async function analyzeIntroVideo(video) {
   return { score, metrics, summary: { avgDiff, avgBrightness, avgContrast } };
 }
 
-function buildIntroPrompts(topic, script, genreKey, duration) {
+function buildIntroPrompts(topic, plan, notes, genreKey, duration) {
   const meta = INTRO_GENRE_META[genreKey] || INTRO_GENRE_META.folk;
-  const condensed = script.replace(/\s+/g, ' ').trim().slice(0, 520);
+  const planText = plan.trim().slice(0, 2400);
+  const noteText = notes.trim().slice(0, 700);
   const imagePrompt = [
-    '[유튜브 인트로 이미지 생성 프롬프트]', `주제: ${topic}`, `장면 내용: ${condensed}`, `스타일: ${meta.visual}`,
+    '[유튜브 인트로 이미지 생성 프롬프트]', `주제: ${topic}`, `기획안:\n${planText}`, noteText ? `추가 장면 설명:\n${noteText}` : '', `스타일: ${meta.visual}`,
+    '기획안의 등장인물, 첨부 태그, 구도 판정, 감정선과 카메라 지시를 최우선으로 반영. 기획안에 없는 인물·소품·사건을 임의로 추가하지 말 것.',
     '구도: 이야기의 가장 긴장감 높은 한순간만 포착한 16:9 와이드 화면. 핵심 인물은 크게, 표정과 행동은 명확하게, 배경에는 사건을 암시하는 단서 1~2개만 배치.',
     '조명과 색감: 전경과 배경이 분리되는 강한 명암, 시선이 인물과 핵심 사건으로 바로 향하도록 설계.',
     '필수 조건: 동일 장면 안에 여러 시간을 섞지 말 것, 화면 분할 금지, 글자·자막·로고·워터마크 금지, 손가락과 얼굴을 자연스럽게 표현, 고해상도.'
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   const videoPrompt = [
-    '[유튜브 인트로 영상 생성 프롬프트]', `주제: ${topic}`, `기준 장면: ${condensed}`, `길이: ${duration}초, 16:9, 자연스러운 시네마틱 영상`,
+    '[유튜브 인트로 영상 생성 프롬프트]', `주제: ${topic}`, `기획안:\n${planText}`, noteText ? `추가 장면 설명:\n${noteText}` : '', `길이: ${duration}초, 16:9, 자연스러운 시네마틱 영상`,
+    '기획안의 씬 종류, 등장인물, 대사(lip-sync 여부), 카메라 무브, 감정선과 금지 조건을 최우선으로 준수. 기획안에 없는 장면 전환이나 인물을 임의로 추가하지 말 것.',
     `움직임: ${meta.motion}. 인물·소품·배경이 각자 물리적으로 자연스럽게 움직이도록 표현.`,
     '카메라: 첫 2초 안에 핵심 사건이 보이게 시작하고, 느린 돌리인 또는 짧은 트래킹으로 긴장감을 높인다. 과도한 흔들림과 급격한 줌은 사용하지 않는다.',
     '시간 흐름: 시작은 사건 직전, 중간은 인물의 반응, 마지막은 결정적인 단서가 드러나되 결말은 완전히 공개하지 않는다.',
     '필수 조건: 장면 전환 없이 한 장면으로 연결, 캐릭터 외형과 의상 일관성 유지, 얼굴 변형·추가 팔다리·자막·로고·워터마크 금지, 음성 및 배경음 없음.'
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   return { imagePrompt, videoPrompt };
+}
+
+function introPromptPanelsHtml(prompts) {
+  return `
+    <div class="search-panel" style="margin-top:18px"><h3 style="margin:0 0 8px;font-size:15px">🖼️ 이미지 프롬프트</h3><textarea rows="12" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.imagePrompt)}</textarea><button class="primary" id="copyIntroImagePromptBtn" style="width:100%;margin-top:10px">📋 이미지 프롬프트 복사</button></div>
+    <div class="search-panel"><h3 style="margin:0 0 8px;font-size:15px">🎥 영상 프롬프트</h3><textarea rows="13" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.videoPrompt)}</textarea><button class="primary" id="copyIntroVideoPromptBtn" style="width:100%;margin-top:10px">📋 영상 프롬프트 복사</button></div>`;
 }
 
 async function renderIntroDiagnosis() {
   const topic = document.getElementById('introTopicInput').value.trim();
+  const plan = document.getElementById('introPlanInput').value.trim();
   const script = document.getElementById('introScriptInput').value.trim();
   const area = document.getElementById('introResultsArea');
   const video = document.getElementById('introVideoPreview');
-  if (!topic || !introVideoReady) {
-    area.innerHTML = '<div class="status error">영상 주제를 입력하고 진단할 6초 영상을 선택해주세요.</div>';
+  const image = document.getElementById('introImagePreview');
+  if (!topic || !plan) {
+    area.innerHTML = '<div class="status error">영상 주제와 인트로 기획안을 모두 입력해주세요.</div>';
+    return;
+  }
+  const prompts = buildIntroPrompts(topic, plan, script, document.getElementById('introGenreSelect').value, 6);
+  if (!introVideoReady) {
+    area.innerHTML = `<div class="action-panel all-good"><h3>✨ 기획안 기반 신규 제작</h3><div class="action-text">이미지나 영상 없이 기획안을 기준으로 6초 인트로 제작 프롬프트를 만들었습니다. 아래 내용을 복사해 생성 도구에 붙여넣으세요.</div></div>${introPromptPanelsHtml(prompts)}`;
+    attachIntroCopyButton('copyIntroImagePromptBtn', prompts.imagePrompt, '이미지 프롬프트');
+    attachIntroCopyButton('copyIntroVideoPromptBtn', prompts.videoPrompt, '영상 프롬프트');
     return;
   }
   const button = document.getElementById('analyzeIntroBtn');
   const originalButtonText = button.textContent;
   button.disabled = true;
-  button.textContent = '프레임 분석 중...';
-  area.innerHTML = '<div class="status">6초 영상에서 5개 프레임을 추출해 분석하고 있습니다...</div>';
+  button.textContent = introMediaType === 'image' ? '이미지 분석 중...' : '프레임 분석 중...';
+  area.innerHTML = `<div class="status">${introMediaType === 'image' ? '인트로 이미지의 구도와 시각 특성을 분석하고 있습니다...' : '6초 영상에서 5개 프레임을 추출해 분석하고 있습니다...'}</div>`;
   try {
-    const diagnosis = await analyzeIntroVideo(video);
-    const sceneText = script || '업로드한 6초 영상의 핵심 인물, 장소, 행동과 분위기를 유지하되 진단에서 부족한 부분을 보완';
-    const prompts = buildIntroPrompts(topic, sceneText, document.getElementById('introGenreSelect').value, 6);
+    const diagnosis = introMediaType === 'image' ? analyzeIntroImage(image) : await analyzeIntroVideo(video);
     const needsWork = diagnosis.metrics.filter(metric => !metric.ok).sort((a, b) => b.weight - a.weight);
-    const grade = diagnosis.score >= 80 ? '강한 6초 인트로' : diagnosis.score >= 60 ? '보완하면 강해질 인트로' : '영상 후킹 보강 필요';
+    const grade = diagnosis.score >= 80 ? '강한 인트로' : diagnosis.score >= 60 ? '보완하면 강해질 인트로' : `${introMediaType === 'image' ? '이미지' : '영상'} 후킹 보강 필요`;
     area.innerHTML = `
     <div class="action-panel ${needsWork.length ? '' : 'all-good'}">
       <h3>🎯 인트로 후킹 점수 ${diagnosis.score}점 · ${grade}</h3>
       ${needsWork.length ? needsWork.map((metric, index) => `<div class="action-item"><div class="action-num">${index + 1}</div><div class="action-text"><b>${escapeHtml(metric.label)} 수정</b>${escapeHtml(metric.tip)}</div></div>`).join('') : '<div class="action-text">핵심 후킹 요소가 모두 들어 있습니다. 아래 프롬프트로 첫 장면 제작을 시작해보세요.</div>'}
     </div>
     <div class="metrics-grid">${diagnosis.metrics.map(metric => `<div class="metric-card ${metric.ok ? 'ok' : 'bad'}"><div class="metric-head"><span>${metric.ok ? '✓' : '!'}</span><b>${escapeHtml(metric.label)}</b><span>${escapeHtml(metric.value)}</span></div><div class="metric-tip">${escapeHtml(metric.tip)}</div></div>`).join('')}</div>
-    <div class="search-panel" style="margin-top:18px"><h3 style="margin:0 0 8px;font-size:15px">🖼️ 이미지 프롬프트</h3><textarea rows="10" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.imagePrompt)}</textarea><button class="primary" id="copyIntroImagePromptBtn" style="width:100%;margin-top:10px">📋 이미지 프롬프트 복사</button></div>
-    <div class="search-panel"><h3 style="margin:0 0 8px;font-size:15px">🎥 영상 프롬프트</h3><textarea rows="11" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.videoPrompt)}</textarea><button class="primary" id="copyIntroVideoPromptBtn" style="width:100%;margin-top:10px">📋 영상 프롬프트 복사</button></div>`;
+    ${introPromptPanelsHtml(prompts)}`;
     attachIntroCopyButton('copyIntroImagePromptBtn', prompts.imagePrompt, '이미지 프롬프트');
     attachIntroCopyButton('copyIntroVideoPromptBtn', prompts.videoPrompt, '영상 프롬프트');
   } catch (error) {
@@ -2490,30 +2535,62 @@ function attachIntroCopyButton(id, text, label) {
   };
 }
 
-const introVideoInput = document.getElementById('introVideoInput');
-introVideoInput.onchange = () => {
-  const file = introVideoInput.files?.[0];
+const introMediaInput = document.getElementById('introMediaInput');
+introMediaInput.onchange = () => {
+  const file = introMediaInput.files?.[0];
   const video = document.getElementById('introVideoPreview');
-  const wrap = document.getElementById('introVideoPreviewWrap');
+  const videoWrap = document.getElementById('introVideoPreviewWrap');
+  const image = document.getElementById('introImagePreview');
+  const imageWrap = document.getElementById('introImagePreviewWrap');
   const label = document.getElementById('introVideoUploadLabel');
-  const meta = document.getElementById('introVideoMeta');
+  const videoMeta = document.getElementById('introVideoMeta');
+  const imageMeta = document.getElementById('introImageMeta');
   introVideoReady = false;
+  introMediaType = '';
   if (!file) return;
   if (introVideoObjectUrl) URL.revokeObjectURL(introVideoObjectUrl);
   introVideoObjectUrl = URL.createObjectURL(file);
-  video.src = introVideoObjectUrl;
-  wrap.style.display = '';
-  label.textContent = `🎥 ${file.name}`;
-  meta.textContent = '영상 정보 확인 중...';
-  video.onloadedmetadata = () => {
-    introVideoReady = true;
-    const inRange = video.duration >= 5.5 && video.duration <= 6.5;
-    meta.innerHTML = `길이 <b>${video.duration.toFixed(2)}초</b> · ${video.videoWidth}×${video.videoHeight} · ${inRange ? '<span style="color:#2fbf71">6초 기준 적합</span>' : '<span style="color:var(--accent)">5.5~6.5초로 조정 권장</span>'}`;
-  };
-  video.onerror = () => {
-    introVideoReady = false;
-    meta.innerHTML = '<span style="color:var(--accent)">이 영상 형식을 브라우저에서 읽지 못했습니다. MP4(H.264) 또는 WebM으로 변환해주세요.</span>';
-  };
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  videoWrap.style.display = 'none';
+  image.removeAttribute('src');
+  imageWrap.style.display = 'none';
+
+  if (file.type.startsWith('image/')) {
+    introMediaType = 'image';
+    label.textContent = `🖼️ ${file.name}`;
+    imageMeta.textContent = '이미지 정보 확인 중...';
+    image.src = introVideoObjectUrl;
+    imageWrap.style.display = '';
+    image.onload = () => {
+      introVideoReady = true;
+      const ratio = image.naturalWidth / Math.max(1, image.naturalHeight);
+      const wide = Math.abs(ratio - 16 / 9) <= 0.12;
+      imageMeta.innerHTML = `${image.naturalWidth}×${image.naturalHeight} · ${wide ? '<span style="color:#2fbf71">16:9 기준 적합</span>' : '<span style="color:var(--accent)">16:9 비율로 조정 권장</span>'}`;
+    };
+    image.onerror = () => {
+      introVideoReady = false;
+      imageMeta.innerHTML = '<span style="color:var(--accent)">이미지를 읽지 못했습니다. JPG·PNG·WebP 파일로 다시 시도해주세요.</span>';
+    };
+  } else if (file.type.startsWith('video/')) {
+    introMediaType = 'video';
+    label.textContent = `🎥 ${file.name}`;
+    videoMeta.textContent = '영상 정보 확인 중...';
+    video.src = introVideoObjectUrl;
+    videoWrap.style.display = '';
+    video.onloadedmetadata = () => {
+      introVideoReady = true;
+      const inRange = video.duration >= 5.5 && video.duration <= 6.5;
+      videoMeta.innerHTML = `길이 <b>${video.duration.toFixed(2)}초</b> · ${video.videoWidth}×${video.videoHeight} · ${inRange ? '<span style="color:#2fbf71">6초 기준 적합</span>' : '<span style="color:var(--accent)">5.5~6.5초로 조정 권장</span>'}`;
+    };
+    video.onerror = () => {
+      introVideoReady = false;
+      videoMeta.innerHTML = '<span style="color:var(--accent)">이 영상 형식을 브라우저에서 읽지 못했습니다. MP4(H.264) 또는 WebM으로 변환해주세요.</span>';
+    };
+  } else {
+    label.textContent = '지원하지 않는 파일입니다. 이미지 또는 영상을 선택해주세요.';
+  }
 };
 
 document.getElementById('analyzeIntroBtn').onclick = renderIntroDiagnosis;
