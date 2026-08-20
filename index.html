@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: three-at-a-time-recommendations-v9 -->
+<!-- deploy-version: smarter-thumbnail-space-diagnosis-v10 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1661,15 +1661,24 @@ function analyzeRegionalBalance(gridDensity) {
   const sorted = [...cells].sort((a, b) => a.density - b.density);
   const avg = cells.reduce((s, c) => s + c.density, 0) / cells.length;
   const mostEmpty = sorted[0];
-  const mostCluttered = sorted[sorted.length - 1];
-  const spread = mostCluttered.density - mostEmpty.density;
-  const isUniform = spread < Math.max(0.015, avg * 0.5);
-
+  const rawMostCluttered = sorted[sorted.length - 1];
   // 뚜렷한 "문제"로 볼 만한 것들 (액션 리스트/점수용, 기준을 완화해서 어지간하면 하나는 잡히게 함)
   const emptyCells = avg > 0.015 ? cells.filter(c => c.density < avg * 0.45).sort((a, b) => a.density - b.density) : [];
-  const clutteredCells = cells.filter(c => c.density > avg * 1.7 && c.density > 0.06).sort((a, b) => b.density - a.density);
+  // 하단 중앙의 높은 선 밀도는 썸네일 제목 문구인 경우가 많으므로 복잡도 경고에서 제외한다.
+  const bottomCenter = cells.find(c => c.y === 2 && c.x === 1);
+  const hasBottomCenterText = bottomCenter && bottomCenter.density > avg * 1.45 && bottomCenter.density > 0.05;
+  const clutteredCells = cells
+    .filter(c => c.density > avg * 1.7 && c.density > 0.06)
+    .filter(c => !(hasBottomCenterText && c.y === 2 && c.x === 1))
+    .sort((a, b) => b.density - a.density);
+  const effectiveSorted = hasBottomCenterText
+    ? sorted.filter(c => !(c.y === 2 && c.x === 1))
+    : sorted;
+  const mostCluttered = effectiveSorted[effectiveSorted.length - 1] || rawMostCluttered;
+  const effectiveSpread = mostCluttered.density - mostEmpty.density;
+  const isUniform = effectiveSpread < Math.max(0.015, avg * 0.5);
 
-  return { cells, avg, emptyCells, clutteredCells, mostEmpty, mostCluttered, isUniform };
+  return { cells, avg, emptyCells, clutteredCells, mostEmpty, mostCluttered, isUniform, hasBottomCenterText };
 }
 
 function scoreThumbnail(m) {
@@ -1710,23 +1719,27 @@ function scoreThumbnail(m) {
     ai: resAi
   });
 
-  const target = 0.28, tol = 0.22;
-  const edgeNorm = Math.max(0, 1 - Math.abs(m.edgeDensity - target) / tol);
-  score += edgeNorm * 15;
   const regional = analyzeRegionalBalance(m.gridDensity);
+  const target = 0.28, tol = 0.22;
+  const nonTextCells = regional.hasBottomCenterText
+    ? regional.cells.filter(c => !(c.y === 2 && c.x === 1))
+    : regional.cells;
+  const complexityDensity = nonTextCells.reduce((sum, cell) => sum + cell.density, 0) / nonTextCells.length;
+  const edgeNorm = Math.max(0, 1 - Math.abs(complexityDensity - target) / tol);
+  score += edgeNorm * 15;
   const topEmpty = regional.emptyCells.slice(0, 2);
   const topCluttered = regional.clutteredCells.slice(0, 2);
 
   let edgeTip, edgeAi;
-  if (m.edgeDensity < target - tol * 0.5) {
+  if (complexityDensity < target - tol * 0.5) {
     if (topEmpty.length) {
-      edgeTip = `전체적으로 요소가 너무 단조로워서 시선을 끌기 어려울 수 있어요. 특히 <b>${topEmpty.map(c => c.name).join(', ')}</b> 부분이 텅 비어 있어서 허전해 보여요. 그 자리에 큰 텍스트나 포인트 요소를 추가해보세요.`;
-      edgeAi = `이미지의 ${topEmpty.map(c => c.name).join('과 ')} 영역이 비어 있고 허전하니, 그 위치에 크고 굵은 제목 텍스트나 강조 아이콘/그래픽을 추가해서 시선을 끌게 해줘`;
+      edgeTip = `전체적으로 요소가 너무 단조로워서 시선을 끌기 어려울 수 있어요. 특히 <b>${topEmpty.map(c => c.name).join(', ')}</b> 부분이 허전해 보여요. 제목 문구가 필요한 자리라면 가독성 좋은 여백으로 유지하고, 아니라면 이야기 단서가 되는 소품·인물 시선·빛·배경 요소 중 하나만 추가하세요.`;
+      edgeAi = `이미지의 ${topEmpty.map(c => c.name).join('과 ')} 영역이 허전하다. 먼저 그 공간이 제목 문구를 위한 여백인지 판단해줘. 문구 자리라면 배경을 단순하게 유지하면서 글자가 잘 읽히도록 은은한 명암 그라데이션과 피사체 방향만 정돈해줘. 문구 자리가 아니라면 영상 주제를 암시하는 소품 1개, 인물의 시선이 향하는 대상, 빛이나 색 포인트 중 가장 자연스러운 하나만 추가해 빈 공간을 채워줘. 의미 없는 장식, 과도한 아이콘, 요소 여러 개를 동시에 추가하지 말아줘`;
     } else {
-      edgeTip = '전체적으로 요소가 너무 단조로워서 시선을 끌기 어려울 수 있어요. 큰 텍스트나 포인트 요소를 추가해보세요.';
-      edgeAi = '너무 밋밋하고 단조로우니 크고 굵은 제목 텍스트나 강조 그래픽 요소를 추가해서 시선을 끌게 해줘';
+      edgeTip = '전체적으로 허전해 보여요. 제목을 넣을 여백은 보존하고, 나머지 빈 공간에는 주제를 암시하는 소품·빛·색 포인트 중 하나만 추가해 시선을 유도해보세요.';
+      edgeAi = '제목 문구가 들어갈 깨끗한 여백은 유지하고, 그 외의 허전한 공간에만 영상 주제를 암시하는 소품 1개 또는 자연스러운 빛과 색 포인트를 추가해줘. 장식을 여러 개 넣지 말고 핵심 피사체로 시선이 이어지게 구성해줘';
     }
-  } else if (m.edgeDensity > target + tol * 0.5) {
+  } else if (complexityDensity > target + tol * 0.5) {
     if (topCluttered.length) {
       edgeTip = `전체적으로 요소가 너무 많아 복잡해 보일 수 있어요. 특히 <b>${topCluttered.map(c => c.name).join(', ')}</b> 부분에 요소가 몰려 있어서 산만해 보여요. 그 부분을 정리해보세요.`;
       edgeAi = `이미지의 ${topCluttered.map(c => c.name).join('과 ')} 영역에 디테일과 요소가 너무 몰려 있어 산만하니, 그 부분을 정리하거나 배경을 흐리게 처리해서 핵심 피사체만 눈에 띄게 해줘`;
@@ -1746,6 +1759,9 @@ function scoreThumbnail(m) {
     ? ' 요소가 이미지 전체에 비교적 고르게 퍼져 있어요.'
     : ` 참고로 이 이미지 안에서는 <b>${regional.mostCluttered.name}</b>이 상대적으로 가장 복잡하고, <b>${regional.mostEmpty.name}</b>이 상대적으로 가장 허전한 영역이에요.`;
   edgeTip += locNote;
+  if (regional.hasBottomCenterText) {
+    edgeTip += ' 하단 중앙의 높은 밀도는 썸네일 문구 영역으로 간주해 복잡도 경고에서 제외했어요.';
+  }
 
   metrics.push({
     label: '구성 복잡도', value: Math.round(edgeNorm * 100) + '점', ok: edgeNorm >= 0.6 && !(topEmpty.length && topCluttered.length), weight: 15,
