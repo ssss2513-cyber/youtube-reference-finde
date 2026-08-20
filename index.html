@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: next-performance-recommendations-v7 -->
+<!-- deploy-version: diverse-no-repeat-recommendations-v8 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -680,8 +680,8 @@
         <label>결과 수
           <select id="countSelect">
             <option value="12">12개</option>
-            <option value="24" selected>24개</option>
-            <option value="48">48개</option>
+            <option value="24">24개</option>
+            <option value="48" selected>48개</option>
           </select>
         </label>
       </div>
@@ -1269,20 +1269,31 @@ function buildPerformanceFallback(videos, query) {
   }).sort((a, b) => b.performanceScore - a.performanceScore);
 }
 
-let lastPerformanceRecommendationIds = [];
+let performanceRecommendationSeenIds = new Set();
+let performanceRecommendationCycleKey = '';
 
 function renderHookRecommendations(videos, query) {
   const savedIds = new Set(getSaved().map(video => video.id));
   const eligible = videos
     .map(video => ({ video, hook: analyzeTitleHook(video, query) }))
     .filter(item => item.hook.score >= 80);
-  const picks = shuffleList(eligible).slice(0, 3);
+  const picks = shuffleList(eligible).slice(0, 6);
   if (!picks.length) {
-    const rankedPool = buildPerformanceFallback(videos, query).slice(0, Math.min(10, videos.length));
-    const unseen = rankedPool.filter(item => !lastPerformanceRecommendationIds.includes(item.video.id));
-    const candidates = unseen.length >= 3 ? unseen : [...unseen, ...rankedPool.filter(item => lastPerformanceRecommendationIds.includes(item.video.id))];
-    const performancePicks = shuffleList(candidates).slice(0, 3);
-    lastPerformanceRecommendationIds = performancePicks.map(item => item.video.id);
+    const cycleKey = `${query}|${videos.map(video => video.id).join(',')}`;
+    if (performanceRecommendationCycleKey !== cycleKey) {
+      performanceRecommendationCycleKey = cycleKey;
+      performanceRecommendationSeenIds = new Set();
+    }
+    const rankedPool = buildPerformanceFallback(videos, query);
+    let unseen = rankedPool.filter(item => !performanceRecommendationSeenIds.has(item.video.id));
+    if (!unseen.length) {
+      performanceRecommendationSeenIds = new Set();
+      unseen = rankedPool;
+    }
+    const candidateWindow = unseen.slice(0, Math.min(12, unseen.length));
+    const performancePicks = shuffleList(candidateWindow).slice(0, 6);
+    performancePicks.forEach(item => performanceRecommendationSeenIds.add(item.video.id));
+    const remainingCount = Math.max(0, rankedPool.length - performanceRecommendationSeenIds.size);
     return `
       <section class="hook-recommend-panel">
         <h3>📈 성과 지표 기반 카피 레퍼런스</h3>
@@ -1306,7 +1317,7 @@ function renderHookRecommendations(videos, query) {
               </div>
             </div>
           </article>`).join('')}
-        <button class="icon-btn" id="refreshPerformanceRecommendationsBtn" style="width:100%;margin-top:12px;padding:10px">🔄 다른 추천 3개 보기</button>
+        <button class="icon-btn" id="refreshPerformanceRecommendationsBtn" style="width:100%;margin-top:12px;padding:10px">${remainingCount > 0 ? `🔄 다른 추천 6개 보기 · 안 본 후보 ${remainingCount}개` : '🔄 모든 후보 확인 완료 · 처음부터 다시 보기'}</button>
       </section>`;
   }
   return `
