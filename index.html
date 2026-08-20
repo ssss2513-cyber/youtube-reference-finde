@@ -640,6 +640,7 @@
     <div class="tab active" data-tab="search">검색</div>
     <div class="tab" data-tab="saved">저장한 레퍼런스 <span id="savedCount"></span></div>
     <div class="tab" data-tab="thumb">썸네일 진단</div>
+    <div class="tab" data-tab="intro">인트로 진단</div>
     <div class="tab" data-tab="seo">SEO 분석</div>
   </div>
 
@@ -693,6 +694,48 @@
       <button class="icon-btn" id="exportBtn">📋 마크다운으로 복사</button>
     </div>
     <div id="savedArea"></div>
+  </div>
+
+  <div id="introTab" style="display:none">
+    <div class="disclaimer">
+      🎬 영상 시작 부분을 붙여넣으면 첫 장면의 즉시성·호기심·갈등·시각성·정보 밀도를 규칙 기반으로 진단합니다.
+      결과는 참고용이며, 이미지·영상 프롬프트 생성과 복사는 무료이고 별도 API를 사용하지 않습니다.
+    </div>
+    <div class="search-panel">
+      <div class="filters" style="flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:14px">
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">영상 주제 / 제목 <span style="color:var(--accent)">*</span></div>
+          <input type="text" id="introTopicInput" placeholder="예: 조선시대 암행어사와 가난한 주막 이야기" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px">
+        </label>
+        <label style="display:block">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">진단할 인트로 대본 <span style="color:var(--accent)">*</span></div>
+          <textarea id="introScriptInput" rows="8" placeholder="영상 시작 15~30초에 해당하는 대본이나 장면 설명을 붙여넣으세요..." style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px;font-family:inherit;resize:vertical"></textarea>
+        </label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <label style="flex:1;min-width:160px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">장르 / 분위기</div>
+            <select id="introGenreSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+              <option value="folk" selected>야담·민담·설화</option>
+              <option value="mystery">미스터리·공포</option>
+              <option value="emotional">감동·사연</option>
+              <option value="information">정보·교육</option>
+              <option value="entertainment">예능·재미</option>
+            </select>
+          </label>
+          <label style="flex:1;min-width:160px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">목표 인트로 길이</div>
+            <select id="introDurationSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px">
+              <option value="10">10초</option>
+              <option value="15" selected>15초</option>
+              <option value="20">20초</option>
+              <option value="30">30초</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <button class="primary" id="analyzeIntroBtn" style="width:100%;margin-top:16px;padding:13px">🎬 인트로 진단하고 프롬프트 만들기</button>
+    </div>
+    <div id="introResultsArea"></div>
   </div>
 
   <div id="thumbTab" style="display:none">
@@ -1051,6 +1094,7 @@ document.querySelectorAll('.tab:not(.subtab)').forEach(tab => {
     document.getElementById('searchTab').style.display = name === 'search' ? '' : 'none';
     document.getElementById('savedTab').style.display = name === 'saved' ? '' : 'none';
     document.getElementById('thumbTab').style.display = name === 'thumb' ? '' : 'none';
+    document.getElementById('introTab').style.display = name === 'intro' ? '' : 'none';
     document.getElementById('seoTab').style.display = name === 'seo' ? '' : 'none';
     if (name === 'saved') renderSaved();
   };
@@ -2290,6 +2334,104 @@ document.getElementById('pickFromSavedBtn').onclick = () => {
     area.style.display = 'block';
   }
 };
+
+/* ---------- 유튜브 인트로 진단 + 이미지·영상 프롬프트 ---------- */
+
+const INTRO_GENRE_META = {
+  folk: { label: '야담·민담·설화', visual: '조선시대 한국 배경의 반실사 디지털 일러스트, 전통 한옥과 한복, 영화적인 명암, 서늘한 야담 분위기', motion: '등불과 옷자락이 바람에 흔들리고 인물이 긴장한 채 천천히 고개를 드는 움직임' },
+  mystery: { label: '미스터리·공포', visual: '어둡고 사실적인 시네마틱 미스터리, 짙은 그림자, 차가운 청색과 희미한 주황 조명, 불길한 분위기', motion: '카메라가 천천히 전진하며 그림자가 움직이고 배경의 작은 단서가 뒤늦게 드러나는 움직임' },
+  emotional: { label: '감동·사연', visual: '따뜻하고 감성적인 영화 스틸, 자연스러운 인물 표정, 부드러운 역광, 현실적인 생활 공간', motion: '인물의 미세한 표정 변화와 손동작을 따라 카메라가 부드럽게 가까워지는 움직임' },
+  information: { label: '정보·교육', visual: '명확하고 현대적인 교육용 시네마틱 비주얼, 핵심 대상이 한눈에 보이는 정돈된 구도, 높은 가독성', motion: '핵심 대상에 빠르게 접근한 뒤 중요한 변화나 비교 지점을 명확하게 보여주는 움직임' },
+  entertainment: { label: '예능·재미', visual: '밝고 역동적인 예능형 영상 스틸, 생생한 색감, 과장되지 않은 재미있는 표정, 에너지 있는 구도', motion: '빠른 카메라 접근과 인물의 즉각적인 리액션, 마지막 순간에 코믹한 결과가 드러나는 움직임' }
+};
+
+function analyzeIntroScript(script) {
+  const firstSentence = script.split(/[.!?。！？\n]/).map(s => s.trim()).find(Boolean) || script.trim();
+  const metrics = [];
+  const addMetric = (label, ok, weight, good, fix) => metrics.push({ label, ok, weight, tip: ok ? good : fix });
+  addMetric('첫 문장 즉시성', firstSentence.length > 0 && firstSentence.length <= 55, 20,
+    '첫 문장이 짧아 시작 장면과 상황을 빠르게 받아들일 수 있어요.',
+    '첫 문장을 55자 이내로 줄이고, 배경 설명보다 가장 위험하거나 이상한 사건부터 보여주세요.');
+  const curiosity = /(왜|어떻게|정체|비밀|사라|그날|그런데|하지만|알고 보니|무슨|대체|유일|절대)/.test(script);
+  addMetric('호기심의 빈칸', curiosity, 20,
+    '결과를 바로 밝히지 않는 정보의 빈칸이 있어 다음 장면을 궁금하게 만듭니다.',
+    '정답을 모두 설명하지 말고 “왜 사라졌을까?”, “문을 연 순간”처럼 확인해야 할 빈칸을 하나 만드세요.');
+  const conflict = /(위기|쫓|죽|금지|막|싸|거절|사라|무너|가난|병|복수|위험|갇|도망|울|절규)/.test(script);
+  addMetric('갈등·위험 신호', conflict, 20,
+    '인물이 잃을 것과 위험이 드러나 이야기의 긴장감이 선명합니다.',
+    '주인공이 지금 무엇을 잃을 수 있는지, 누가 막고 있는지 또는 어떤 위험이 닥쳤는지 한 문장으로 넣으세요.');
+  const visual = /(문|불|눈|손|얼굴|피|비|눈보라|등불|달|집|산|길|칼|그림자|땅|마을|방|창|뛰|열|닫|쓰러)/.test(script);
+  addMetric('첫 장면 시각성', visual, 20,
+    '눈에 보이는 대상과 행동이 있어 이미지와 영상 장면으로 옮기기 좋습니다.',
+    '추상적인 설명 대신 장소·인물·소품·행동을 넣으세요. 예: “눈보라 속 주막 문을 두드리는 젖은 선비”.');
+  const lengthFit = script.length >= 70 && script.length <= 430;
+  addMetric('인트로 정보량', lengthFit, 10,
+    '첫 10~30초에 담기 적당한 정보량입니다.',
+    script.length < 70 ? '상황과 위험을 한두 문장 더 추가해 장면의 맥락을 분명하게 만드세요.' : '설명이 많습니다. 사건·위험·궁금증만 남기고 430자 이내로 압축하세요.');
+  const specific = /[0-9一二三四五六七八九十]|["“”'‘’]|(하룻밤|사흘|한 사람|단 하나|처음|마지막)/.test(script);
+  addMetric('구체적인 단서', specific, 10,
+    '숫자·대사·시간 같은 구체적인 단서가 장면을 기억하기 쉽게 만듭니다.',
+    '짧은 직접 대사, 시간, 숫자 또는 단 하나의 특이한 물건을 넣어 장면을 구체화하세요.');
+  return { score: metrics.filter(metric => metric.ok).reduce((sum, metric) => sum + metric.weight, 0), metrics };
+}
+
+function buildIntroPrompts(topic, script, genreKey, duration) {
+  const meta = INTRO_GENRE_META[genreKey] || INTRO_GENRE_META.folk;
+  const condensed = script.replace(/\s+/g, ' ').trim().slice(0, 520);
+  const imagePrompt = [
+    '[유튜브 인트로 이미지 생성 프롬프트]', `주제: ${topic}`, `장면 내용: ${condensed}`, `스타일: ${meta.visual}`,
+    '구도: 이야기의 가장 긴장감 높은 한순간만 포착한 16:9 와이드 화면. 핵심 인물은 크게, 표정과 행동은 명확하게, 배경에는 사건을 암시하는 단서 1~2개만 배치.',
+    '조명과 색감: 전경과 배경이 분리되는 강한 명암, 시선이 인물과 핵심 사건으로 바로 향하도록 설계.',
+    '필수 조건: 동일 장면 안에 여러 시간을 섞지 말 것, 화면 분할 금지, 글자·자막·로고·워터마크 금지, 손가락과 얼굴을 자연스럽게 표현, 고해상도.'
+  ].join('\n');
+  const videoPrompt = [
+    '[유튜브 인트로 영상 생성 프롬프트]', `주제: ${topic}`, `기준 장면: ${condensed}`, `길이: ${duration}초, 16:9, 자연스러운 시네마틱 영상`,
+    `움직임: ${meta.motion}. 인물·소품·배경이 각자 물리적으로 자연스럽게 움직이도록 표현.`,
+    '카메라: 첫 2초 안에 핵심 사건이 보이게 시작하고, 느린 돌리인 또는 짧은 트래킹으로 긴장감을 높인다. 과도한 흔들림과 급격한 줌은 사용하지 않는다.',
+    '시간 흐름: 시작은 사건 직전, 중간은 인물의 반응, 마지막은 결정적인 단서가 드러나되 결말은 완전히 공개하지 않는다.',
+    '필수 조건: 장면 전환 없이 한 장면으로 연결, 캐릭터 외형과 의상 일관성 유지, 얼굴 변형·추가 팔다리·자막·로고·워터마크 금지, 음성 및 배경음 없음.'
+  ].join('\n');
+  return { imagePrompt, videoPrompt };
+}
+
+function renderIntroDiagnosis() {
+  const topic = document.getElementById('introTopicInput').value.trim();
+  const script = document.getElementById('introScriptInput').value.trim();
+  const area = document.getElementById('introResultsArea');
+  if (!topic || !script) {
+    area.innerHTML = '<div class="status error">영상 주제와 인트로 대본을 모두 입력해주세요.</div>';
+    return;
+  }
+  const diagnosis = analyzeIntroScript(script);
+  const prompts = buildIntroPrompts(topic, script, document.getElementById('introGenreSelect').value, document.getElementById('introDurationSelect').value);
+  const needsWork = diagnosis.metrics.filter(metric => !metric.ok).sort((a, b) => b.weight - a.weight);
+  const grade = diagnosis.score >= 80 ? '강한 인트로' : diagnosis.score >= 60 ? '보완하면 강해질 인트로' : '후킹 보강 필요';
+  area.innerHTML = `
+    <div class="action-panel ${needsWork.length ? '' : 'all-good'}">
+      <h3>🎯 인트로 후킹 점수 ${diagnosis.score}점 · ${grade}</h3>
+      ${needsWork.length ? needsWork.map((metric, index) => `<div class="action-item"><div class="action-num">${index + 1}</div><div class="action-text"><b>${escapeHtml(metric.label)} 수정</b>${escapeHtml(metric.tip)}</div></div>`).join('') : '<div class="action-text">핵심 후킹 요소가 모두 들어 있습니다. 아래 프롬프트로 첫 장면 제작을 시작해보세요.</div>'}
+    </div>
+    <div class="metrics-grid">${diagnosis.metrics.map(metric => `<div class="metric-card ${metric.ok ? 'ok' : 'bad'}"><div class="metric-head"><span>${metric.ok ? '✓' : '!'}</span><b>${escapeHtml(metric.label)}</b><span>${metric.weight}점</span></div><div class="metric-tip">${escapeHtml(metric.tip)}</div></div>`).join('')}</div>
+    <div class="search-panel" style="margin-top:18px"><h3 style="margin:0 0 8px;font-size:15px">🖼️ 이미지 프롬프트</h3><textarea rows="10" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.imagePrompt)}</textarea><button class="primary" id="copyIntroImagePromptBtn" style="width:100%;margin-top:10px">📋 이미지 프롬프트 복사</button></div>
+    <div class="search-panel"><h3 style="margin:0 0 8px;font-size:15px">🎥 영상 프롬프트</h3><textarea rows="11" readonly style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12.5px/1.65 inherit;resize:vertical">${escapeHtml(prompts.videoPrompt)}</textarea><button class="primary" id="copyIntroVideoPromptBtn" style="width:100%;margin-top:10px">📋 영상 프롬프트 복사</button></div>`;
+  attachIntroCopyButton('copyIntroImagePromptBtn', prompts.imagePrompt, '이미지 프롬프트');
+  attachIntroCopyButton('copyIntroVideoPromptBtn', prompts.videoPrompt, '영상 프롬프트');
+}
+
+function attachIntroCopyButton(id, text, label) {
+  const button = document.getElementById(id);
+  if (!button) return;
+  button.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      const original = button.textContent;
+      button.textContent = `✓ ${label} 복사됨`;
+      setTimeout(() => { button.textContent = original; }, 1600);
+    } catch (e) { prompt_dialog(text); }
+  };
+}
+
+document.getElementById('analyzeIntroBtn').onclick = renderIntroDiagnosis;
 
 /* ---------- 유튜브 SEO 분석기 (규칙 기반 무료 분석 + 선택적 실제 검색 비교) ---------- */
 
