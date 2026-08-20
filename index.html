@@ -529,6 +529,10 @@
   .hook-recommend-intro { margin: 0 0 13px; color: var(--text-dim); font-size: 12px; line-height: 1.55; }
   .hook-pick { padding: 13px 0; border-top: 1px dashed var(--border); }
   .hook-pick:first-of-type { border-top: 0; padding-top: 0; }
+  .hook-pick-content { display: grid; grid-template-columns: minmax(130px, 180px) 1fr; gap: 12px; align-items: start; }
+  .hook-pick-thumb-link { display: block; border-radius: 9px; overflow: hidden; background: var(--chip-bg); }
+  .hook-pick-thumb { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; transition: transform 0.15s; }
+  .hook-pick-thumb-link:hover .hook-pick-thumb { transform: scale(1.025); }
   .hook-pick-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
   .hook-rank { color: var(--accent); font-size: 12px; font-weight: 800; }
   .hook-score { background: var(--chip-bg); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
@@ -536,6 +540,10 @@
   .hook-copy-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0; }
   .hook-copy { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; color: var(--text); font-size: 12px; font-weight: 700; }
   .hook-reason { color: var(--text-dim); font-size: 11.5px; line-height: 1.65; }
+  @media (max-width: 640px) {
+    .hook-pick-content { grid-template-columns: 1fr; }
+    .hook-pick-thumb-link { max-width: 100%; }
+  }
   .action-panel {
     background: var(--accent-dim);
     border: 1px solid var(--accent);
@@ -1217,14 +1225,21 @@ function renderHookRecommendations(videos, query) {
         <p class="hook-recommend-intro">후킹 점수 80점 이상 영상이 없어 조회수·구독자 대비 조회수·업로드 후 일평균 조회수·추정 시청 잠재량을 기준으로 골랐어요. 실제 시청시간은 YouTube 공개 API에서 제공하지 않아 영상 길이와 조회수로 추정한 참고 지표입니다.</p>
         ${performancePicks.map(({ video, hook, performanceScore, reasons }, index) => `
           <article class="hook-pick">
-            <div class="hook-pick-head">
-              <span class="hook-rank">대체 추천 ${index + 1}</span>
-              <span class="hook-score">성과 ${performanceScore}점</span>
-              <span class="hook-score">후킹 ${hook.score}점</span>
-              <a class="hook-source" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener">${escapeHtml(hook.title)}</a>
+            <div class="hook-pick-content">
+              <a class="hook-pick-thumb-link" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener" aria-label="${escapeHtml(hook.title)} 영상 열기">
+                <img class="hook-pick-thumb" src="${escapeHtml(video.thumb)}" loading="lazy" alt="${escapeHtml(hook.title)} 썸네일">
+              </a>
+              <div>
+                <div class="hook-pick-head">
+                  <span class="hook-rank">대체 추천 ${index + 1}</span>
+                  <span class="hook-score">성과 ${performanceScore}점</span>
+                  <span class="hook-score">후킹 ${hook.score}점</span>
+                  <a class="hook-source" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener">${escapeHtml(hook.title)}</a>
+                </div>
+                <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
+                <div class="hook-reason"><b>추천 이유:</b> ${reasons.map(escapeHtml).join(' · ')}</div>
+              </div>
             </div>
-            <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
-            <div class="hook-reason"><b>추천 이유:</b> ${reasons.map(escapeHtml).join(' · ')}</div>
           </article>`).join('')}
       </section>`;
   }
@@ -1234,13 +1249,20 @@ function renderHookRecommendations(videos, query) {
       <p class="hook-recommend-intro">후킹 점수 80점 이상인 영상만 골랐어요. 검색할 때마다 후보 영상과 카피 조합이 새롭게 바뀝니다.</p>
       ${picks.map(({ video, hook }, index) => `
         <article class="hook-pick">
-          <div class="hook-pick-head">
-            <span class="hook-rank">추천 ${index + 1}</span>
-            <span class="hook-score">후킹 ${hook.score}점</span>
-            <a class="hook-source" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener">${escapeHtml(hook.title)}</a>
+          <div class="hook-pick-content">
+            <a class="hook-pick-thumb-link" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener" aria-label="${escapeHtml(hook.title)} 영상 열기">
+              <img class="hook-pick-thumb" src="${escapeHtml(video.thumb)}" loading="lazy" alt="${escapeHtml(hook.title)} 썸네일">
+            </a>
+            <div>
+              <div class="hook-pick-head">
+                <span class="hook-rank">추천 ${index + 1}</span>
+                <span class="hook-score">후킹 ${hook.score}점</span>
+                <a class="hook-source" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener">${escapeHtml(hook.title)}</a>
+              </div>
+              <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
+              <div class="hook-reason"><b>추천 이유:</b> ${hook.reasons.map(escapeHtml).join(' 또한, ')}</div>
+            </div>
           </div>
-          <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
-          <div class="hook-reason"><b>추천 이유:</b> ${hook.reasons.map(escapeHtml).join(' 또한, ')}</div>
         </article>`).join('')}
     </section>`;
 }
