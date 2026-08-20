@@ -518,6 +518,24 @@
     line-height: 1.5;
   }
   .bench-insight-row.warn { color: var(--accent); }
+  .hook-recommend-panel {
+    background: linear-gradient(135deg, var(--panel), var(--accent-dim));
+    border: 1px solid var(--accent);
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  .hook-recommend-panel h3 { margin: 0 0 5px; font-size: 15px; color: var(--accent); }
+  .hook-recommend-intro { margin: 0 0 13px; color: var(--text-dim); font-size: 12px; line-height: 1.55; }
+  .hook-pick { padding: 13px 0; border-top: 1px dashed var(--border); }
+  .hook-pick:first-of-type { border-top: 0; padding-top: 0; }
+  .hook-pick-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
+  .hook-rank { color: var(--accent); font-size: 12px; font-weight: 800; }
+  .hook-score { background: var(--chip-bg); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+  .hook-source { color: var(--text); font-size: 12px; font-weight: 650; line-height: 1.45; }
+  .hook-copy-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0; }
+  .hook-copy { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; color: var(--text); font-size: 12px; font-weight: 700; }
+  .hook-reason { color: var(--text-dim); font-size: 11.5px; line-height: 1.65; }
   .action-panel {
     background: var(--accent-dim);
     border: 1px solid var(--accent);
@@ -1062,6 +1080,87 @@ function formatDate(iso) {
   return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[ch]);
+}
+
+const HOOK_WORD_GROUPS = {
+  반전: ['반전', '알고 보니', '사실은', '정체', '비밀', '진실', '결말'],
+  위기: ['사라진', '버린', '쫓겨', '죽', '위기', '복수', '가난', '병든', '눈물'],
+  감정: ['사랑', '눈물', '후회', '감동', '분노', '행복', '불쌍', '애틋'],
+  호기심: ['왜', '이유', '무슨 일', '어디', '누구', '어떻게', '그날', '하룻밤'],
+  구체성: ['년', '달', '일', '번', '명', '가지', '첫째', '둘째', '셋째']
+};
+
+function analyzeTitleHook(video, query) {
+  const title = video.title.replace(/#[^\s]+/g, '').trim();
+  const hits = Object.entries(HOOK_WORD_GROUPS)
+    .filter(([, words]) => words.some(word => title.includes(word)))
+    .map(([label]) => label);
+  const hasQuote = /["“”'‘’]/.test(title);
+  const hasContrast = /(지만|는데|그러나|그런데|유일|가장|마침내)/.test(title);
+  const hasQuestion = /[?？]|왜|어떻게|이유/.test(title);
+  const queryFront = query && title.indexOf(query) >= 0 && title.indexOf(query) <= 18;
+  const lengthFit = title.length >= 18 && title.length <= 62;
+  let score = 30 + Math.min(40, hits.length * 10);
+  if (hasQuote) score += 8;
+  if (hasContrast) score += 8;
+  if (hasQuestion) score += 6;
+  if (queryFront) score += 5;
+  if (lengthFit) score += 3;
+  score = Math.min(100, score);
+
+  const reasons = [];
+  if (hits.length) reasons.push(`${hits.join('·')} 장치를 사용해 결과를 바로 말하지 않고 다음 내용을 궁금하게 만듭니다`);
+  if (hasQuote) reasons.push('인물의 직접 대사가 장면을 즉시 떠올리게 해 감정 이입이 빠릅니다');
+  if (hasContrast) reasons.push('상반된 상황이나 예외를 제시해 이야기의 갈등이 선명합니다');
+  if (hasQuestion) reasons.push('질문형 구조가 시청자가 답을 확인하도록 클릭 동기를 만듭니다');
+  if (queryFront) reasons.push(`검색어 “${query}”가 앞부분에 있어 주제 파악이 빠릅니다`);
+  if (!reasons.length) reasons.push('주제와 사건이 한 문장에 함께 들어 있어 영상 내용을 빠르게 이해할 수 있습니다');
+  reasons.push(`조회수 ${formatViews(video.views)}회는 실제 반응을 참고하는 보조 지표이며, 후킹 점수에는 직접 합산하지 않았습니다`);
+
+  return { score, reasons, title, copies: buildHookCopies(title, query, hits, hasQuote) };
+}
+
+function buildHookCopies(title, query, hits, hasQuote) {
+  const subject = (query || title.split(/[\/|#—-]/)[0] || '이 이야기').trim().slice(0, 18);
+  const quoted = title.match(/["“”'‘’]([^"“”'‘’]{3,24})["“”'‘’]/)?.[1];
+  const copies = [];
+  if (hasQuote && quoted) copies.push(`“${quoted}”`);
+  if (hits.includes('반전')) copies.push(`알고 보니 숨겨진 진실`);
+  else if (hits.includes('위기')) copies.push(`그날, 모든 것이 무너졌다`);
+  else copies.push(`${subject}, 그날 벌어진 일`);
+  if (hits.includes('감정')) copies.push(`마침내 눈물로 갚은 은혜`);
+  else copies.push(`아무도 몰랐던 ${subject}의 비밀`);
+  copies.push(`마지막에 드러난 뜻밖의 정체`);
+  return [...new Set(copies)].slice(0, 3);
+}
+
+function renderHookRecommendations(videos, query) {
+  const picks = videos
+    .map(video => ({ video, hook: analyzeTitleHook(video, query) }))
+    .sort((a, b) => b.hook.score - a.hook.score || Number(b.video.views) - Number(a.video.views))
+    .slice(0, Math.min(3, videos.length));
+  if (!picks.length) return '';
+  return `
+    <section class="hook-recommend-panel">
+      <h3>🔥 후킹이 강한 카피 레퍼런스</h3>
+      <p class="hook-recommend-intro">제목의 반전·갈등·감정·호기심·구체성을 분석해 카피로 응용하기 좋은 영상을 골랐어요. 아래 문구는 원제를 복사하지 않고 검색 주제에 맞게 재구성한 추천안입니다.</p>
+      ${picks.map(({ video, hook }, index) => `
+        <article class="hook-pick">
+          <div class="hook-pick-head">
+            <span class="hook-rank">추천 ${index + 1}</span>
+            <span class="hook-score">후킹 ${hook.score}점</span>
+            <a class="hook-source" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener">${escapeHtml(hook.title)}</a>
+          </div>
+          <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
+          <div class="hook-reason"><b>추천 이유:</b> ${hook.reasons.map(escapeHtml).join(' 또한, ')}</div>
+        </article>`).join('')}
+    </section>`;
+}
+
 function cardHTML(v, isSaved) {
   const url = `https://www.youtube.com/watch?v=${v.id}`;
   return `
@@ -1209,7 +1308,7 @@ async function doSearch() {
     const map = {};
     videos.forEach(v => map[v.id] = v);
 
-    resultsArea.innerHTML = `<div class="grid">${videos.map(v => cardHTML(v, savedIds.has(v.id))).join('')}</div>`;
+    resultsArea.innerHTML = `${renderHookRecommendations(videos, query)}<div class="grid">${videos.map(v => cardHTML(v, savedIds.has(v.id))).join('')}</div>`;
     attachSaveHandlers(resultsArea, map);
   } catch (err) {
     resultsArea.innerHTML = `<div class="status error">오류: ${err.message}<br><span style="font-size:12px">API 키가 올바른지, YouTube Data API v3가 활성화되어 있는지 확인해주세요.</span></div>`;
@@ -2573,3 +2672,4 @@ document.getElementById('runBenchmarkBtn').onclick = runBenchmark;
 
 </body>
 </html>
+
