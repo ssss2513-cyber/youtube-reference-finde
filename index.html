@@ -957,7 +957,7 @@ const SAVED_STORAGE = 'ytref_saved';
 const QUOTA_STORAGE = 'ytref_quota_usage';
 const DAILY_FREE_QUOTA = 10000;
 // 공식 문서 기준 유닛 비용: search.list = 100, videos.list = 1 (요청 1회당, id 개수 무관)
-const UNIT_COST = { search: 100, videos: 1 };
+const UNIT_COST = { search: 100, videos: 1, channels: 1 };
 
 // 일부 환경(브라우저 미리보기 샌드박스, 프라이버시 모드 등)은 localStorage 접근 자체를 막을 수 있어서
 // 모든 접근을 안전하게 감싸서 저장이 안 되더라도 앱이 멈추지 않도록 함
@@ -1069,6 +1069,11 @@ function formatDuration(iso) {
   parts.push(String(s).padStart(2,'0'));
   return parts.join(':');
 }
+function durationToSeconds(iso) {
+  const m = String(iso || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return parseInt(m[1] || 0) * 3600 + parseInt(m[2] || 0) * 60 + parseInt(m[3] || 0);
+}
 function formatViews(n) {
   n = parseInt(n || 0);
   if (n >= 100000000) return (n/100000000).toFixed(1) + '억';
@@ -1152,16 +1157,77 @@ function shuffleList(items) {
   return shuffled;
 }
 
+function buildPerformanceFallback(videos, query) {
+  const now = Date.now();
+  const rows = videos.map(video => {
+    const views = Number(video.views) || 0;
+    const subscribers = Number(video.subscribers) || 0;
+    const ageDays = Math.max(1, (now - new Date(video.publishedAt).getTime()) / 86400000);
+    return {
+      video,
+      views,
+      subscribers,
+      viewsPerDay: views / ageDays,
+      viewSubRatio: subscribers > 0 ? views / subscribers : 0,
+      watchPotential: views * Math.max(1, video.durationSeconds || 0)
+    };
+  });
+  const maxima = {
+    views: Math.max(1, ...rows.map(row => row.views)),
+    viewsPerDay: Math.max(1, ...rows.map(row => row.viewsPerDay)),
+    viewSubRatio: Math.max(0.01, ...rows.map(row => row.viewSubRatio)),
+    watchPotential: Math.max(1, ...rows.map(row => row.watchPotential))
+  };
+  const normalized = (value, max) => Math.log1p(value) / Math.log1p(max);
+  return rows.map(row => {
+    const performanceScore = Math.round(
+      normalized(row.views, maxima.views) * 40 +
+      normalized(row.viewsPerDay, maxima.viewsPerDay) * 30 +
+      normalized(row.viewSubRatio, maxima.viewSubRatio) * 20 +
+      normalized(row.watchPotential, maxima.watchPotential) * 10
+    );
+    const hook = analyzeTitleHook(row.video, query);
+    const ratioText = row.subscribers > 0
+      ? `구독자 대비 조회수 ${row.viewSubRatio.toFixed(row.viewSubRatio >= 10 ? 0 : 1)}배`
+      : '구독자 수 비공개 또는 확인 불가';
+    return {
+      video: row.video,
+      hook,
+      performanceScore,
+      reasons: [
+        `조회수 ${formatViews(row.views)}회`,
+        `업로드 후 일평균 약 ${formatViews(Math.round(row.viewsPerDay))}회`,
+        ratioText,
+        `영상 길이 ${row.video.duration || '확인 불가'}와 조회수를 결합한 시청 잠재량을 반영했습니다`
+      ]
+    };
+  }).sort((a, b) => b.performanceScore - a.performanceScore);
+}
+
 function renderHookRecommendations(videos, query) {
   const eligible = videos
     .map(video => ({ video, hook: analyzeTitleHook(video, query) }))
     .filter(item => item.hook.score >= 80);
   const picks = shuffleList(eligible).slice(0, 3);
-  if (!picks.length) return `
-    <section class="hook-recommend-panel">
-      <h3>🔥 후킹이 강한 카피 레퍼런스</h3>
-      <p class="hook-recommend-intro" style="margin-bottom:0">이번 검색 결과에는 후킹 점수 80점 이상인 영상이 없어요. 기준에 못 미치는 영상은 추천하지 않습니다.</p>
-    </section>`;
+  if (!picks.length) {
+    const performancePicks = shuffleList(buildPerformanceFallback(videos, query).slice(0, Math.min(5, videos.length))).slice(0, 3);
+    return `
+      <section class="hook-recommend-panel">
+        <h3>📈 성과 지표 기반 카피 레퍼런스</h3>
+        <p class="hook-recommend-intro">후킹 점수 80점 이상 영상이 없어 조회수·구독자 대비 조회수·업로드 후 일평균 조회수·추정 시청 잠재량을 기준으로 골랐어요. 실제 시청시간은 YouTube 공개 API에서 제공하지 않아 영상 길이와 조회수로 추정한 참고 지표입니다.</p>
+        ${performancePicks.map(({ video, hook, performanceScore, reasons }, index) => `
+          <article class="hook-pick">
+            <div class="hook-pick-head">
+              <span class="hook-rank">대체 추천 ${index + 1}</span>
+              <span class="hook-score">성과 ${performanceScore}점</span>
+              <span class="hook-score">후킹 ${hook.score}점</span>
+              <a class="hook-source" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}" target="_blank" rel="noopener">${escapeHtml(hook.title)}</a>
+            </div>
+            <div class="hook-copy-list">${hook.copies.map(copy => `<span class="hook-copy">${escapeHtml(copy)}</span>`).join('')}</div>
+            <div class="hook-reason"><b>추천 이유:</b> ${reasons.map(escapeHtml).join(' · ')}</div>
+          </article>`).join('')}
+      </section>`;
+  }
   return `
     <section class="hook-recommend-panel">
       <h3>🔥 후킹이 강한 카피 레퍼런스</h3>
@@ -1315,11 +1381,34 @@ async function doSearch() {
       id: it.id,
       title: it.snippet.title,
       channel: it.snippet.channelTitle,
+      channelId: it.snippet.channelId,
       thumb: it.snippet.thumbnails?.medium?.url || it.snippet.thumbnails?.default?.url,
       views: it.statistics?.viewCount || 0,
       publishedAt: it.snippet.publishedAt,
-      duration: formatDuration(it.contentDetails.duration)
+      duration: formatDuration(it.contentDetails.duration),
+      durationSeconds: durationToSeconds(it.contentDetails.duration),
+      subscribers: 0
     }));
+
+    const channelIds = [...new Set(videos.map(video => video.channelId).filter(Boolean))];
+    if (channelIds.length) {
+      try {
+        const channelParams = new URLSearchParams({
+          part: 'statistics',
+          id: channelIds.join(','),
+          key: apiKey
+        });
+        const channelRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?${channelParams}`);
+        const channelData = await channelRes.json();
+        addQuotaUnits(UNIT_COST.channels);
+        if (!channelData.error) {
+          const subscriberMap = Object.fromEntries((channelData.items || []).map(item => [item.id, item.statistics?.subscriberCount || 0]));
+          videos.forEach(video => { video.subscribers = subscriberMap[video.channelId] || 0; });
+        }
+      } catch (e) {
+        // 구독자 정보를 못 가져와도 조회수·업로드 속도·영상 길이로 추천을 계속함
+      }
+    }
 
     const saved = getSaved();
     const savedIds = new Set(saved.map(v => v.id));
