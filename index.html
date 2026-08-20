@@ -1127,27 +1127,45 @@ function analyzeTitleHook(video, query) {
 function buildHookCopies(title, query, hits, hasQuote) {
   const subject = (query || title.split(/[\/|#—-]/)[0] || '이 이야기').trim().slice(0, 18);
   const quoted = title.match(/["“”'‘’]([^"“”'‘’]{3,24})["“”'‘’]/)?.[1];
-  const copies = [];
-  if (hasQuote && quoted) copies.push(`“${quoted}”`);
-  if (hits.includes('반전')) copies.push(`알고 보니 숨겨진 진실`);
-  else if (hits.includes('위기')) copies.push(`그날, 모든 것이 무너졌다`);
-  else copies.push(`${subject}, 그날 벌어진 일`);
-  if (hits.includes('감정')) copies.push(`마침내 눈물로 갚은 은혜`);
-  else copies.push(`아무도 몰랐던 ${subject}의 비밀`);
-  copies.push(`마지막에 드러난 뜻밖의 정체`);
-  return [...new Set(copies)].slice(0, 3);
+  const pool = [
+    `${subject}, 그날 벌어진 일`,
+    `아무도 몰랐던 ${subject}의 비밀`,
+    `마지막에 드러난 뜻밖의 정체`,
+    `그날 밤, 운명이 뒤집혔다`,
+    `단 한 사람만 알고 있던 진실`,
+    `모두가 외면한 순간 벌어진 일`
+  ];
+  if (hasQuote && quoted) pool.push(`“${quoted}”`);
+  if (hits.includes('반전')) pool.push('알고 보니 숨겨진 진실', '끝까지 감춰진 진짜 정체');
+  if (hits.includes('위기')) pool.push('그날, 모든 것이 무너졌다', '사라진 사람들에게 무슨 일이');
+  if (hits.includes('감정')) pool.push('마침내 눈물로 갚은 은혜', '한마디가 바꾼 두 사람의 운명');
+  if (hits.includes('호기심')) pool.push('문을 연 순간 모든 게 바뀌었다', '아침에 눈을 뜨자 벌어진 일');
+  return shuffleList([...new Set(pool)]).slice(0, 3);
+}
+
+function shuffleList(items) {
+  const shuffled = [...items];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 function renderHookRecommendations(videos, query) {
-  const picks = videos
+  const eligible = videos
     .map(video => ({ video, hook: analyzeTitleHook(video, query) }))
-    .sort((a, b) => b.hook.score - a.hook.score || Number(b.video.views) - Number(a.video.views))
-    .slice(0, Math.min(3, videos.length));
-  if (!picks.length) return '';
+    .filter(item => item.hook.score >= 80);
+  const picks = shuffleList(eligible).slice(0, 3);
+  if (!picks.length) return `
+    <section class="hook-recommend-panel">
+      <h3>🔥 후킹이 강한 카피 레퍼런스</h3>
+      <p class="hook-recommend-intro" style="margin-bottom:0">이번 검색 결과에는 후킹 점수 80점 이상인 영상이 없어요. 기준에 못 미치는 영상은 추천하지 않습니다.</p>
+    </section>`;
   return `
     <section class="hook-recommend-panel">
       <h3>🔥 후킹이 강한 카피 레퍼런스</h3>
-      <p class="hook-recommend-intro">제목의 반전·갈등·감정·호기심·구체성을 분석해 카피로 응용하기 좋은 영상을 골랐어요. 아래 문구는 원제를 복사하지 않고 검색 주제에 맞게 재구성한 추천안입니다.</p>
+      <p class="hook-recommend-intro">후킹 점수 80점 이상인 영상만 골랐어요. 검색할 때마다 후보 영상과 카피 조합이 새롭게 바뀝니다.</p>
       ${picks.map(({ video, hook }, index) => `
         <article class="hook-pick">
           <div class="hook-pick-head">
