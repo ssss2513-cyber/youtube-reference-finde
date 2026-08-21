@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: smarter-thumbnail-space-diagnosis-v10 -->
+<!-- deploy-version: api-performance-thumbnail-prompt-v11 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1888,6 +1888,15 @@ function renderThumbResults(m, result, img) {
             <div class="action-text"><b>${mt.label}</b>${mt.tip}</div>
           </div>`).join('')}
         <button class="icon-btn" id="copyAiPromptBtn" style="margin-top:12px;width:100%">🤖 ChatGPT용 수정 프롬프트 복사</button>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)">
+          <div style="font-size:13px;font-weight:700;margin-bottom:5px">📈 조회수 잘 나오는 영상 기반 프롬프트</div>
+          <div style="font-size:11.5px;color:var(--text-dim);line-height:1.55;margin-bottom:8px">같은 주제의 실제 YouTube 성과 상위 영상을 분석해 현재 썸네일 수정 프롬프트에 반영합니다. 공개 API에는 CTR이 없어 조회수·일평균 조회수·구독자 대비 조회수를 성과 지표로 사용합니다.</div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap">
+            <input id="thumbPerformanceKeywordInput" type="text" placeholder="영상 주제 입력 (예: 야담, 조선시대 민담)" style="flex:1;min-width:210px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+            <button class="icon-btn" id="buildPerformanceThumbPromptBtn">YouTube 분석·프롬프트 만들기</button>
+          </div>
+          <div id="performanceThumbPromptArea"></div>
+        </div>
       </div>`
     : `<div class="action-panel all-good">
         <h3>🎉 특별히 고칠 점이 없어요</h3>
@@ -1929,6 +1938,9 @@ function renderThumbResults(m, result, img) {
       });
     };
   }
+
+  const performanceBtn = document.getElementById('buildPerformanceThumbPromptBtn');
+  if (performanceBtn) performanceBtn.onclick = () => buildPerformanceThumbnailPrompt(needsWork);
 
   const linkBtn = document.getElementById('linkToNewBtn');
   if (linkBtn) {
@@ -1996,6 +2008,101 @@ function buildAiPrompt(needsWork) {
     '최종 결과물은 16:9 가로 비율의 선명한 유튜브 썸네일이어야 해.'
   );
   return lines.join('\n');
+}
+
+async function buildPerformanceThumbnailPrompt(needsWork) {
+  const keywordInput = document.getElementById('thumbPerformanceKeywordInput');
+  const area = document.getElementById('performanceThumbPromptArea');
+  const button = document.getElementById('buildPerformanceThumbPromptBtn');
+  const keyword = keywordInput?.value.trim() || '';
+  const apiKey = getApiKey();
+  if (!keyword) {
+    area.innerHTML = '<div class="status error" style="padding:12px 0">영상 주제를 입력해주세요.</div>';
+    return;
+  }
+  if (!apiKey) {
+    area.innerHTML = '<div class="status error" style="padding:12px 0">먼저 우측 상단에서 YouTube API 키를 설정해주세요.</div>';
+    return;
+  }
+  button.disabled = true;
+  button.textContent = '성과 영상 분석 중...';
+  area.innerHTML = '<div class="status" style="padding:14px 0">조회수 상위 영상과 썸네일을 분석하고 있어요...</div>';
+  try {
+    const searchParams = new URLSearchParams({ part: 'snippet', q: keyword, type: 'video', maxResults: '18', order: 'viewCount', key: apiKey });
+    const searchRes = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
+    const searchData = await searchRes.json();
+    addQuotaUnits(UNIT_COST.search);
+    if (searchData.error) throw new Error(searchData.error.message);
+    const ids = (searchData.items || []).map(item => item.id.videoId).filter(Boolean);
+    if (!ids.length) throw new Error('분석할 영상을 찾지 못했습니다.');
+
+    const detailParams = new URLSearchParams({ part: 'snippet,statistics', id: ids.join(','), key: apiKey });
+    const detailRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?${detailParams}`);
+    const detailData = await detailRes.json();
+    addQuotaUnits(UNIT_COST.videos);
+    if (detailData.error) throw new Error(detailData.error.message);
+    const now = Date.now();
+    const videos = (detailData.items || []).map(item => {
+      const views = Number(item.statistics?.viewCount || 0);
+      const days = Math.max(1, (now - new Date(item.snippet.publishedAt).getTime()) / 86400000);
+      return { id:item.id, title:item.snippet.title, channel:item.snippet.channelTitle, channelId:item.snippet.channelId, views,
+        viewsPerDay:views / days, thumb:item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.medium?.url };
+    });
+    const channelIds = [...new Set(videos.map(v => v.channelId).filter(Boolean))];
+    const subscriberMap = {};
+    if (channelIds.length) {
+      const channelParams = new URLSearchParams({ part:'statistics', id:channelIds.join(','), key:apiKey });
+      const channelRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?${channelParams}`);
+      const channelData = await channelRes.json();
+      addQuotaUnits(UNIT_COST.channels);
+      (channelData.items || []).forEach(item => subscriberMap[item.id] = Number(item.statistics?.subscriberCount || 0));
+    }
+    videos.forEach(v => {
+      v.subscribers = subscriberMap[v.channelId] || 0;
+      v.performance = Math.log10(v.views + 1) * 0.45 + Math.log10(v.viewsPerDay + 1) * 0.35 + Math.log10(v.views / Math.max(1, v.subscribers) + 1) * 0.2;
+    });
+    const leaders = videos.sort((a,b) => b.performance - a.performance).slice(0,6);
+    const analyzed = [];
+    for (const video of leaders) {
+      try {
+        const benchmarkImg = await loadImageForAnalysis(video.thumb);
+        analyzed.push({ video, result:scoreThumbnail(analyzeImagePixels(benchmarkImg)) });
+      } catch (e) {}
+    }
+    if (!analyzed.length) throw new Error('성과 영상 썸네일 이미지를 분석하지 못했습니다.');
+    const goodCounts = {};
+    analyzed.forEach(item => item.result.metrics.filter(metric => metric.ok).forEach(metric => {
+      goodCounts[metric.label] = (goodCounts[metric.label] || 0) + 1;
+    }));
+    const commonStrengths = Object.entries(goodCounts).sort((a,b) => b[1]-a[1]).slice(0,4)
+      .map(([label,count]) => `${label}(${count}/${analyzed.length})`);
+    const currentFixes = needsWork.map(metric => metric.ai).filter(Boolean);
+    const prompt = [
+      '[YouTube 성과 영상 기반 썸네일 수정 프롬프트]',
+      `영상 주제: ${keyword}`,
+      '분석 기준: 조회수, 업로드 후 일평균 조회수, 구독자 대비 조회수를 조합한 공개 성과 지표',
+      `성과 상위 ${analyzed.length}개 썸네일의 공통 강점: ${commonStrengths.join(', ') || '뚜렷한 공통 강점 없음'}`,
+      '', '첨부한 내 썸네일을 아래 조건으로 수정해줘.',
+      ...currentFixes.map((text,index) => `${index+1}. ${text}`),
+      `${currentFixes.length+1}. 성과 상위 썸네일의 공통 강점을 그대로 복제하지 말고 내 주제에 맞게 적용해줘: ${commonStrengths.join(', ')}`,
+      `${currentFixes.length+2}. 모바일의 작은 화면에서도 핵심 인물·사건·감정이 1초 안에 읽히도록 주 피사체를 크게 하고 시선 흐름을 단순하게 만들어줘.`,
+      `${currentFixes.length+3}. 제목 문구가 이미 있으면 글자를 새로 만들거나 바꾸지 말고, 특히 하단 중앙 문구 영역을 복잡한 배경으로 오판해 제거하지 말아줘.`,
+      `${currentFixes.length+4}. 허전한 곳은 제목용 여백이면 유지하고, 아니라면 주제를 암시하는 소품·시선·빛·색 포인트 중 하나만 추가해줘.`,
+      '', '원본의 핵심 인물, 이야기 내용, 기존 제목 문구는 유지해줘. 최종 결과는 1280x720, 16:9의 선명한 유튜브 썸네일로 만들어줘.',
+      '주의: 공개 API만으로 실제 클릭률은 확인할 수 없으므로 성과 영상의 시각적 공통점을 참고한 개선안이며 클릭률을 보장하지 않는다.'
+    ].join('\n');
+    area.innerHTML = `<div class="disclaimer" style="margin:12px 0 8px">✅ 성과 상위 ${analyzed.length}개 분석 완료 · 공통 강점: ${escapeHtml(commonStrengths.join(', ') || '뚜렷한 공통점 없음')}</div>
+      <textarea rows="13" readonly style="width:100%;padding:11px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12px/1.6 inherit;resize:vertical">${escapeHtml(prompt)}</textarea>
+      <button class="icon-btn" id="copyPerformanceThumbPromptBtn" style="width:100%;margin-top:8px">📋 성과 기반 이미지 프롬프트 복사</button>`;
+    document.getElementById('copyPerformanceThumbPromptBtn').onclick = function() {
+      navigator.clipboard.writeText(prompt).then(() => { this.textContent='✅ 복사 완료! 이미지와 함께 붙여넣으세요'; }).catch(() => prompt_dialog(prompt));
+    };
+  } catch (error) {
+    area.innerHTML = `<div class="status error" style="padding:12px 0">오류: ${escapeHtml(error.message)}</div>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'YouTube 분석·프롬프트 만들기';
+  }
 }
 
 let currentThumbImg = null;
