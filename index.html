@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: detailed-thumbnail-fix-plan-v12 -->
+<!-- deploy-version: genre-topic-reference-search-v13 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -651,6 +651,33 @@
         <input type="text" id="queryInput" placeholder="예: 브이로그 인트로, 인터뷰 조명, 제품 언박싱 편집 스타일...">
         <button class="primary" id="searchBtn">검색</button>
       </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:12px">
+        <label>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:5px">레퍼런스 장르</div>
+          <select id="referenceGenreSelect" style="width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+            <option value="">전체 장르</option>
+            <option value="romance">로맨스·인연</option>
+            <option value="status">신분 격변·인생 역전</option>
+            <option value="revenge">복수·응징</option>
+            <option value="family">가족·시월드 갈등</option>
+            <option value="folk">야담·민담·설화</option>
+            <option value="palace">궁중·역사</option>
+            <option value="mystery">미스터리·공포</option>
+            <option value="emotion">감동·휴먼 사연</option>
+            <option value="success">성공·재기</option>
+            <option value="betrayal">배신·비밀·반전</option>
+            <option value="comedy">코미디·유쾌한 이야기</option>
+            <option value="knowledge">지식·교훈·생활 정보</option>
+          </select>
+        </label>
+        <label>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:5px">세부 주제</div>
+          <select id="referenceThemeSelect" disabled style="width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+            <option value="">장르를 먼저 선택하세요</option>
+          </select>
+        </label>
+      </div>
+      <div id="referenceGenreHint" style="display:none;margin:-3px 0 12px;padding:8px 10px;border-radius:8px;background:var(--chip-bg);color:var(--text-dim);font-size:12px"></div>
       <div class="filters">
         <label>정렬
           <select id="orderSelect">
@@ -1438,17 +1465,90 @@ document.getElementById('exportBtn').onclick = () => {
   });
 };
 
+const REFERENCE_GENRES = {
+  romance: {
+    label:'로맨스·인연',
+    themes:['운명적 만남','신분 차이 사랑','재회·첫사랑','금지된 사랑','계약 결혼','오해와 엇갈림','중년 로맨스','구원 서사']
+  },
+  status: {
+    label:'신분 격변·인생 역전',
+    themes:['거지에서 부자','천민에서 양반','하녀에서 안주인','머슴에서 대감','몰락한 양반의 재기','숨겨진 출생의 비밀','가짜 신분','재벌·후계자 반전']
+  },
+  revenge: {
+    label:'복수·응징',
+    themes:['배신한 가족 응징','억울한 누명 복수','시어머니·며느리 복수','재산을 빼앗긴 사람','정체를 숨긴 복수','권선징악','통쾌한 역전','늦게 밝혀진 진실']
+  },
+  family: {
+    label:'가족·시월드 갈등',
+    themes:['고부 갈등','형제의 재산 다툼','불효 자식','며느리의 반전','숨겨진 친자','상속 분쟁','부부 갈등','가족 화해']
+  },
+  folk: {
+    label:'야담·민담·설화',
+    themes:['조선시대 야담','기이한 민담','선비와 과부','효자·효녀 이야기','도깨비 설화','무당과 예언','원한 맺힌 귀신','권선징악 설화']
+  },
+  palace: {
+    label:'궁중·역사',
+    themes:['왕과 후궁','궁녀의 비밀','세자 책봉','역모와 음모','폐비·복권','암행어사','충신과 간신','역사 속 미스터리']
+  },
+  mystery: {
+    label:'미스터리·공포',
+    themes:['실종 사건','금지된 방','기이한 마을','귀신과 저주','미제 사건','소름 돋는 반전','예언과 징조','밤길 괴담']
+  },
+  emotion: {
+    label:'감동·휴먼 사연',
+    themes:['부모의 희생','가난 속 가족애','은혜 갚은 인연','잃어버린 가족','노년의 사랑','동물과의 인연','용서와 화해','마지막 약속']
+  },
+  success: {
+    label:'성공·재기',
+    themes:['밑바닥에서 성공','파산 후 재기','숨은 재능 발견','무시받던 사람의 성공','노력 끝의 역전','사업 성공담','늦깎이 성공','실패를 이긴 사람']
+  },
+  betrayal: {
+    label:'배신·비밀·반전',
+    themes:['배우자의 이중생활','친구의 배신','출생의 비밀','유언장 반전','가짜 가족','숨겨진 재산','믿었던 사람의 정체','마지막에 밝혀진 진실']
+  },
+  comedy: {
+    label:'코미디·유쾌한 이야기',
+    themes:['착각과 오해','통쾌한 말싸움','허당 주인공','신분을 바꿔치기','엉뚱한 복수','웃기는 가족','재치 있는 선비','반전 유머']
+  },
+  knowledge: {
+    label:'지식·교훈·생활 정보',
+    themes:['옛사람의 지혜','인간관계 교훈','돈과 재산 관리','건강한 생활 습관','심리와 행동','역사적 교훈','말과 처세술','노후 생활 정보']
+  }
+};
+
+function updateReferenceThemes() {
+  const genreKey = document.getElementById('referenceGenreSelect').value;
+  const themeSelect = document.getElementById('referenceThemeSelect');
+  const hint = document.getElementById('referenceGenreHint');
+  const genre = REFERENCE_GENRES[genreKey];
+  if (!genre) {
+    themeSelect.innerHTML = '<option value="">장르를 먼저 선택하세요</option>';
+    themeSelect.disabled = true;
+    hint.style.display = 'none';
+    return;
+  }
+  themeSelect.disabled = false;
+  themeSelect.innerHTML = '<option value="">전체 세부 주제</option>' + genre.themes.map(theme => `<option value="${escapeHtml(theme)}">${escapeHtml(theme)}</option>`).join('');
+  hint.style.display = 'block';
+  hint.textContent = `선택한 장르 “${genre.label}”가 검색어와 카피 추천에 함께 반영됩니다.`;
+}
+document.getElementById('referenceGenreSelect').addEventListener('change', updateReferenceThemes);
+
 async function doSearch() {
   const apiKey = getApiKey();
   const resultsArea = document.getElementById('resultsArea');
-  const query = document.getElementById('queryInput').value.trim();
+  const rawQuery = document.getElementById('queryInput').value.trim();
+  const genreKey = document.getElementById('referenceGenreSelect').value;
+  const genre = REFERENCE_GENRES[genreKey];
+  const theme = document.getElementById('referenceThemeSelect').value;
+  const query = [rawQuery, genre?.label || '', theme].filter(Boolean).join(' ');
 
   if (!apiKey) {
     resultsArea.innerHTML = `<div class="status error">먼저 우측 상단 "⚙ API 키 설정"에서 YouTube Data API 키를 등록해주세요.</div>`;
     return;
   }
   if (!query) {
-    resultsArea.innerHTML = `<div class="status error">검색어(주제)를 입력해주세요.</div>`;
+    resultsArea.innerHTML = `<div class="status error">검색어를 입력하거나 장르·세부 주제를 선택해주세요.</div>`;
     return;
   }
 
