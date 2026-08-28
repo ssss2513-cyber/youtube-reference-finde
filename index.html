@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: thumbnail-title-recommendations-v15 -->
+<!-- deploy-version: standalone-title-recommendation-tab-v16 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -641,6 +641,7 @@
     <div class="tab active" data-tab="search">검색</div>
     <div class="tab" data-tab="saved">저장한 레퍼런스 <span id="savedCount"></span></div>
     <div class="tab" data-tab="thumb">썸네일 진단</div>
+    <div class="tab" data-tab="title">제목 추천</div>
     <div class="tab" data-tab="intro">인트로 진단</div>
     <div class="tab" data-tab="seo">SEO 분석</div>
   </div>
@@ -791,17 +792,6 @@
       실제 AI가 이미지를 "이해"하는 것이 아니며, 클릭률(CTR)을 예측하거나 보장하지 않습니다.
     </div>
     <div class="search-panel">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
-        <label>
-          <div style="font-size:13px;font-weight:700;margin-bottom:5px">영상 핵심 주제·내용 <span style="color:var(--accent)">*</span></div>
-          <input id="thumbTitleTopicInput" type="text" placeholder="예: 천민으로 살던 소녀가 왕의 친딸로 밝혀지는 이야기" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
-        </label>
-        <label>
-          <div style="font-size:13px;font-weight:700;margin-bottom:5px">핵심 검색 키워드</div>
-          <input id="thumbTitleKeywordInput" type="text" placeholder="예: 신분 역전" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
-        </label>
-      </div>
-      <div style="font-size:11.5px;color:var(--text-dim);margin:-4px 0 12px">이미지의 색감·인물·대비는 자동 분석하고, 이야기 의미는 입력한 핵심 내용을 바탕으로 제목을 만듭니다.</div>
       <label class="upload-dropzone" id="uploadDropzone">
         <input type="file" id="thumbFileInput" accept="image/*" style="display:none">
         <span id="uploadLabel">📤 진단할 썸네일 이미지를 선택하세요 (클릭해서 업로드)</span>
@@ -947,6 +937,34 @@
       </div>
       <div id="benchmarkResultsArea"></div>
     </div>
+  </div>
+
+  <div id="titleTab" style="display:none">
+    <div class="disclaimer">
+      ✍️ 썸네일의 인물·색감·명암·분위기를 분석하고 영상 핵심 내용과 결합해 제목을 추천합니다.
+      핵심 키워드를 제목 앞부분에 배치하고, 내용은 명확하게 전달하면서 결말은 궁금하게 남깁니다.
+    </div>
+    <div class="search-panel">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px">
+        <label>
+          <div style="font-size:13px;font-weight:700;margin-bottom:5px">영상 핵심 주제·내용 <span style="color:var(--accent)">*</span></div>
+          <input id="thumbTitleTopicInput" type="text" placeholder="예: 천민으로 살던 소녀가 왕의 친딸로 밝혀지는 이야기" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+        </label>
+        <label>
+          <div style="font-size:13px;font-weight:700;margin-bottom:5px">핵심 검색 키워드</div>
+          <input id="thumbTitleKeywordInput" type="text" placeholder="예: 신분 역전" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+        </label>
+      </div>
+      <label class="upload-dropzone" id="titleUploadDropzone">
+        <input type="file" id="titleThumbFileInput" accept="image/*" style="display:none">
+        <span>📤 제목을 추천받을 썸네일 이미지를 선택하세요</span>
+      </label>
+      <div class="thumb-preview-wrap" id="titleThumbPreviewWrap" style="display:none">
+        <img id="titleThumbPreviewImg" class="thumb-preview-img">
+        <div><button class="primary" id="generateThumbTitlesBtn">후킹 제목 추천받기</button></div>
+      </div>
+    </div>
+    <div id="titleRecommendationResultsArea"></div>
   </div>
 
   <div id="seoTab" style="display:none">
@@ -1145,6 +1163,7 @@ document.querySelectorAll('.tab:not(.subtab)').forEach(tab => {
     document.getElementById('searchTab').style.display = name === 'search' ? '' : 'none';
     document.getElementById('savedTab').style.display = name === 'saved' ? '' : 'none';
     document.getElementById('thumbTab').style.display = name === 'thumb' ? '' : 'none';
+    document.getElementById('titleTab').style.display = name === 'title' ? '' : 'none';
     document.getElementById('introTab').style.display = name === 'intro' ? '' : 'none';
     document.getElementById('seoTab').style.display = name === 'seo' ? '' : 'none';
     if (name === 'saved') renderSaved();
@@ -2042,6 +2061,25 @@ function buildThumbnailTitleRecommendations(m) {
   </div>`;
 }
 
+function attachThumbnailTitleHandlers() {
+  document.querySelectorAll('.copyThumbTitleBtn').forEach(button => {
+    button.onclick = () => {
+      const item = window.__ytrefTitleRecommendations?.[Number(button.dataset.titleIndex)];
+      if (!item) return;
+      navigator.clipboard.writeText(item.title).then(() => {
+        button.textContent = '완료';
+        setTimeout(() => { button.textContent = '복사'; }, 1500);
+      }).catch(() => prompt_dialog(item.title));
+    };
+  });
+  const titlePromptBtn = document.getElementById('copyThumbTitleAiPromptBtn');
+  if (titlePromptBtn) {
+    titlePromptBtn.onclick = () => navigator.clipboard.writeText(window.__ytrefTitleAiPrompt || '').then(() => {
+      titlePromptBtn.textContent = '✅ 복사 완료! 썸네일 이미지와 함께 붙여넣으세요';
+    }).catch(() => prompt_dialog(window.__ytrefTitleAiPrompt || ''));
+  }
+}
+
 function renderThumbResults(m, result, img) {
   const area = document.getElementById('thumbResultsArea');
   const swatches = m.dominantColors.map(c =>
@@ -2077,7 +2115,6 @@ function renderThumbResults(m, result, img) {
 
   const needsWork = result.metrics.filter(mt => !mt.ok).sort((a, b) => b.weight - a.weight);
   window.__ytrefAiPrompt = buildAiPrompt(needsWork);
-  const titleRecommendationPanel = buildThumbnailTitleRecommendations(m);
   const actionPanel = needsWork.length
     ? `<div class="action-panel">
         <h3>🔧 이 순서대로 고쳐보세요 (영향 큰 순)</h3>
@@ -2111,7 +2148,6 @@ function renderThumbResults(m, result, img) {
 
   area.innerHTML = `
     ${actionPanel}
-    ${titleRecommendationPanel}
     <div class="score-panel">
       <div class="score-circle" style="border-color:${result.gradeColor}; color:${result.gradeColor}">
         <span class="num">${result.score}</span>
@@ -2144,23 +2180,6 @@ function renderThumbResults(m, result, img) {
         prompt_dialog(prompt);
       });
     };
-  }
-
-  document.querySelectorAll('.copyThumbTitleBtn').forEach(button => {
-    button.onclick = () => {
-      const item = window.__ytrefTitleRecommendations?.[Number(button.dataset.titleIndex)];
-      if (!item) return;
-      navigator.clipboard.writeText(item.title).then(() => {
-        button.textContent = '완료';
-        setTimeout(() => { button.textContent = '복사'; }, 1500);
-      }).catch(() => prompt_dialog(item.title));
-    };
-  });
-  const titlePromptBtn = document.getElementById('copyThumbTitleAiPromptBtn');
-  if (titlePromptBtn) {
-    titlePromptBtn.onclick = () => navigator.clipboard.writeText(window.__ytrefTitleAiPrompt || '').then(() => {
-      titlePromptBtn.textContent = '✅ 복사 완료! 썸네일 이미지와 함께 붙여넣으세요';
-    }).catch(() => prompt_dialog(window.__ytrefTitleAiPrompt || ''));
   }
 
   const performanceBtn = document.getElementById('buildPerformanceThumbPromptBtn');
@@ -2343,6 +2362,53 @@ async function buildPerformanceThumbnailPrompt(needsWork) {
     button.textContent = 'YouTube 분석·프롬프트 만들기';
   }
 }
+
+let currentTitleThumbImg = null;
+const titleThumbFileInput = document.getElementById('titleThumbFileInput');
+const titleUploadDropzone = document.getElementById('titleUploadDropzone');
+
+function handleTitleThumbFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = event => {
+    const img = new Image();
+    img.onload = () => {
+      currentTitleThumbImg = img;
+      document.getElementById('titleThumbPreviewImg').src = event.target.result;
+      document.getElementById('titleThumbPreviewWrap').style.display = 'flex';
+      document.getElementById('titleRecommendationResultsArea').innerHTML = '';
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+titleThumbFileInput.addEventListener('change', event => handleTitleThumbFile(event.target.files[0]));
+titleUploadDropzone.addEventListener('dragover', event => { event.preventDefault(); titleUploadDropzone.classList.add('dragover'); });
+titleUploadDropzone.addEventListener('dragleave', () => titleUploadDropzone.classList.remove('dragover'));
+titleUploadDropzone.addEventListener('drop', event => {
+  event.preventDefault();
+  titleUploadDropzone.classList.remove('dragover');
+  if (event.dataTransfer.files[0]) handleTitleThumbFile(event.dataTransfer.files[0]);
+});
+document.getElementById('generateThumbTitlesBtn').onclick = () => {
+  const area = document.getElementById('titleRecommendationResultsArea');
+  const topic = document.getElementById('thumbTitleTopicInput').value.trim();
+  if (!topic) {
+    area.innerHTML = '<div class="status error">영상 핵심 주제·내용을 입력해주세요.</div>';
+    return;
+  }
+  if (!currentTitleThumbImg) {
+    area.innerHTML = '<div class="status error">제목을 추천받을 썸네일 이미지를 선택해주세요.</div>';
+    return;
+  }
+  area.innerHTML = '<div class="status">썸네일 분위기와 주제를 분석해 제목을 만들고 있어요...</div>';
+  setTimeout(() => {
+    const metrics = analyzeImagePixels(currentTitleThumbImg);
+    area.innerHTML = buildThumbnailTitleRecommendations(metrics);
+    attachThumbnailTitleHandlers();
+  }, 30);
+};
 
 let currentThumbImg = null;
 
