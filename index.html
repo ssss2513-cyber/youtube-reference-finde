@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- deploy-version: status-reversal-label-v14 -->
+<!-- deploy-version: thumbnail-title-recommendations-v15 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -791,6 +791,17 @@
       실제 AI가 이미지를 "이해"하는 것이 아니며, 클릭률(CTR)을 예측하거나 보장하지 않습니다.
     </div>
     <div class="search-panel">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
+        <label>
+          <div style="font-size:13px;font-weight:700;margin-bottom:5px">영상 핵심 주제·내용 <span style="color:var(--accent)">*</span></div>
+          <input id="thumbTitleTopicInput" type="text" placeholder="예: 천민으로 살던 소녀가 왕의 친딸로 밝혀지는 이야기" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+        </label>
+        <label>
+          <div style="font-size:13px;font-weight:700;margin-bottom:5px">핵심 검색 키워드</div>
+          <input id="thumbTitleKeywordInput" type="text" placeholder="예: 신분 역전" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+        </label>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-dim);margin:-4px 0 12px">이미지의 색감·인물·대비는 자동 분석하고, 이야기 의미는 입력한 핵심 내용을 바탕으로 제목을 만듭니다.</div>
       <label class="upload-dropzone" id="uploadDropzone">
         <input type="file" id="thumbFileInput" accept="image/*" style="display:none">
         <span id="uploadLabel">📤 진단할 썸네일 이미지를 선택하세요 (클릭해서 업로드)</span>
@@ -1962,6 +1973,75 @@ function plainMetricText(html) {
   return temp.textContent || temp.innerText || '';
 }
 
+function trimTitle(text, maxLength = 48) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  return clean.length <= maxLength ? clean : clean.slice(0, maxLength - 1).trim() + '…';
+}
+
+function buildThumbnailTitleRecommendations(m) {
+  const topic = document.getElementById('thumbTitleTopicInput')?.value.trim() || '';
+  const keyword = document.getElementById('thumbTitleKeywordInput')?.value.trim() || '';
+  if (!topic) {
+    return `<div class="search-panel" style="border-color:var(--accent)">
+      <h3 style="margin:0 0 6px;font-size:15px;color:var(--accent)">✍️ 썸네일 맞춤 제목 추천</h3>
+      <div style="font-size:13px;line-height:1.6;color:var(--text-dim)">위의 <b>영상 핵심 주제·내용</b>을 입력하고 다시 진단하면, 썸네일 분위기와 어울리는 후킹 제목을 추천해드려요. 이미지 픽셀 분석만으로는 인물의 정체나 이야기 내용을 정확히 알 수 없어 짧은 내용 입력이 필요합니다.</div>
+    </div>`;
+  }
+  const key = keyword || topic.split(/[,.·/]/)[0].trim() || topic;
+  const hasPerson = m.skinRatio >= 0.04;
+  const isDramatic = m.stdLum >= 38 || m.avgSat >= 0.3;
+  const isWarm = (m.warmSatSum + m.coolSatSum) > 0 && m.warmSatSum / (m.warmSatSum + m.coolSatSum) >= 0.4;
+  const visualTone = hasPerson
+    ? (isDramatic ? '강한 표정과 대비가 있어 인물의 선택·정체·결말을 전면에 둔 제목이 어울립니다.' : '인물이 중심이라 감정과 관계 변화를 명확히 드러내는 제목이 어울립니다.')
+    : (isDramatic ? '대비가 강해 사건·반전·위기를 선명하게 약속하는 제목이 어울립니다.' : '화면이 차분해 구체적인 사건과 결과를 제목에서 분명하게 알려주는 편이 좋습니다.');
+  const emotionalWord = isWarm ? '운명' : '진실';
+  const candidates = [
+    { title:`${key}, 단 한 번의 선택이 바꾼 ${emotionalWord}`, type:'키워드 선두형', reason:'핵심 검색어를 맨 앞에 배치하고 변화의 원인을 남겨 검색 이해도와 호기심을 함께 높입니다.' },
+    { title:`아무도 몰랐던 ${key}의 진실, 마지막에 밝혀졌다`, type:'미공개 진실형', reason:'주제를 명시하면서 결말 직전의 정보 공백을 만들어 다음 내용을 확인하게 합니다.' },
+    { title:`${key}인 줄 알았는데… 모두가 속고 있었습니다`, type:'반전형', reason:'기존 믿음과 실제 결과를 충돌시켜 반전을 예고하되 결론은 숨깁니다.' },
+    { title:`${topic}, 그날 이후 모든 것이 뒤집혔다`, type:'사건 결과형', reason:'이야기 내용을 직접 제시하고 변화가 시작된 시점을 강조해 영상 맥락을 쉽게 이해시킵니다.' },
+    { title:`${key}의 정체를 알게 된 순간 벌어진 일`, type:'정체 공개형', reason:'핵심 키워드와 구체적 사건 구조가 들어가 알고리즘과 시청자가 주제를 빠르게 파악할 수 있습니다.' },
+    { title:`끝까지 무시당한 ${key}, 마지막 선택은 달랐다`, type:'감정·역전형', reason:'불리한 시작과 달라진 결과를 대비시켜 감정 이입과 결말 궁금증을 만듭니다.' },
+    { title:`모두가 반대했던 ${key}, 결국 증명해냈습니다`, type:'갈등 해결형', reason:'대립과 결과를 한 문장에 담아 갈등 구조가 분명하고 긍정적 보상을 기대하게 합니다.' },
+    { title:`${key}에게 숨겨진 비밀 하나, 운명이 바뀌었다`, type:'비밀 단서형', reason:'비밀의 개수를 구체화하고 변화 결과를 제시해 과도한 낚시 없이 호기심을 만듭니다.' }
+  ].map(item => ({...item, title:trimTitle(item.title)}));
+  window.__ytrefTitleRecommendations = candidates;
+  const aiPrompt = [
+    '[썸네일 이미지 기반 유튜브 제목 생성 요청]',
+    `영상 핵심 내용: ${topic}`,
+    `핵심 검색 키워드: ${key}`,
+    `썸네일 시각 분위기: ${visualTone}`,
+    '',
+    '첨부한 썸네일 이미지와 위 내용을 함께 분석해서 제목 10개를 만들어줘.',
+    '조건:',
+    '1. 핵심 검색 키워드를 가능하면 제목 앞 15자 안에 자연스럽게 배치한다.',
+    '2. 제목만 읽어도 인물·사건·갈등 중 최소 하나가 명확해야 한다.',
+    '3. 결론을 전부 말하지 말고 반전·선택·정체·결과 중 하나의 정보 공백을 남긴다.',
+    '4. 모바일에서 잘리지 않도록 권장 28~45자, 최대 50자 이내로 쓴다.',
+    '5. 썸네일 문구를 그대로 반복하지 말고 서로 보완한다.',
+    '6. 영상에 없는 사실, 과장된 숫자, 허위 표현, 의미 없는 충격·소름 표현은 쓰지 않는다.',
+    '7. 제목마다 후킹 장치와 추천 이유를 한 줄로 설명한다.'
+  ].join('\n');
+  window.__ytrefTitleAiPrompt = aiPrompt;
+  return `<div class="search-panel" style="border-color:var(--accent)">
+    <h3 style="margin:0 0 5px;font-size:15px;color:var(--accent)">✍️ 썸네일 맞춤 후킹 제목 추천</h3>
+    <div class="disclaimer" style="margin:8px 0 10px"><b>시각 분석:</b> ${escapeHtml(visualTone)}<br><b>제목 원칙:</b> 검색 키워드 선두 배치 · 내용 명확성 · 정보 공백 · 50자 이내</div>
+    ${candidates.map((item,index) => `<div class="metric-row">
+      <span class="metric-icon">${index+1}</span>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+          <div><span class="hook-score">${escapeHtml(item.type)}</span><div style="font-size:14px;font-weight:750;line-height:1.45;margin-top:6px">${escapeHtml(item.title)}</div></div>
+          <button class="icon-btn copyThumbTitleBtn" data-title-index="${index}" style="padding:6px 9px;white-space:nowrap">복사</button>
+        </div>
+        <div class="metric-tip" style="margin-top:5px">추천 이유: ${escapeHtml(item.reason)}</div>
+      </div>
+    </div>`).join('')}
+    <div style="font-size:13px;font-weight:700;margin-top:12px">🤖 이미지를 직접 이해하는 AI용 제목 생성 프롬프트</div>
+    <textarea rows="11" readonly style="width:100%;margin-top:7px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:12px/1.6 inherit;resize:vertical">${escapeHtml(aiPrompt)}</textarea>
+    <button class="icon-btn" id="copyThumbTitleAiPromptBtn" style="width:100%;margin-top:8px">📋 AI 제목 생성 프롬프트 복사</button>
+  </div>`;
+}
+
 function renderThumbResults(m, result, img) {
   const area = document.getElementById('thumbResultsArea');
   const swatches = m.dominantColors.map(c =>
@@ -1997,6 +2077,7 @@ function renderThumbResults(m, result, img) {
 
   const needsWork = result.metrics.filter(mt => !mt.ok).sort((a, b) => b.weight - a.weight);
   window.__ytrefAiPrompt = buildAiPrompt(needsWork);
+  const titleRecommendationPanel = buildThumbnailTitleRecommendations(m);
   const actionPanel = needsWork.length
     ? `<div class="action-panel">
         <h3>🔧 이 순서대로 고쳐보세요 (영향 큰 순)</h3>
@@ -2030,6 +2111,7 @@ function renderThumbResults(m, result, img) {
 
   area.innerHTML = `
     ${actionPanel}
+    ${titleRecommendationPanel}
     <div class="score-panel">
       <div class="score-circle" style="border-color:${result.gradeColor}; color:${result.gradeColor}">
         <span class="num">${result.score}</span>
@@ -2062,6 +2144,23 @@ function renderThumbResults(m, result, img) {
         prompt_dialog(prompt);
       });
     };
+  }
+
+  document.querySelectorAll('.copyThumbTitleBtn').forEach(button => {
+    button.onclick = () => {
+      const item = window.__ytrefTitleRecommendations?.[Number(button.dataset.titleIndex)];
+      if (!item) return;
+      navigator.clipboard.writeText(item.title).then(() => {
+        button.textContent = '완료';
+        setTimeout(() => { button.textContent = '복사'; }, 1500);
+      }).catch(() => prompt_dialog(item.title));
+    };
+  });
+  const titlePromptBtn = document.getElementById('copyThumbTitleAiPromptBtn');
+  if (titlePromptBtn) {
+    titlePromptBtn.onclick = () => navigator.clipboard.writeText(window.__ytrefTitleAiPrompt || '').then(() => {
+      titlePromptBtn.textContent = '✅ 복사 완료! 썸네일 이미지와 함께 붙여넣으세요';
+    }).catch(() => prompt_dialog(window.__ytrefTitleAiPrompt || ''));
   }
 
   const performanceBtn = document.getElementById('buildPerformanceThumbPromptBtn');
